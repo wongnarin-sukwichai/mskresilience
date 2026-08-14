@@ -1,186 +1,298 @@
 <script setup lang="ts">
-import DonutChart from '@/components/admin/DonutChart.vue';
+import BarChart from '@/components/admin/BarChart.vue';
 import StatCard from '@/components/admin/StatCard.vue';
-import TrendChart from '@/components/admin/TrendChart.vue';
-import { MAP_CENTER, MUNICIPALITY_BOUNDARY, communities, riskColors } from '@/data/mahasarakham';
+import { communityZones } from '@/data/communityZones';
+import { hazardBadgeClass, hazardIcons, hazardOrder, hazardShortLabel, riskLevelFromScore, riskLevelMeta, seededValue } from '@/data/hazardMeta';
+import { MAP_CENTER, MUNICIPALITY_BOUNDARY, communities, riskColors, riskNameTH, type Community } from '@/data/mahasarakham';
+import { communityName, events } from '@/data/mockEvents';
 import AdminLayout from '@/layouts/AdminLayout.vue';
+import { fadeInGroup, fadeOutGroup } from '@/lib/leafletFade';
 import { Head, Link } from '@inertiajs/vue3';
 import L from 'leaflet';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+
+// Everything below except "จำนวนชุมชนทั้งหมด" (real, from communities.length) and the community
+// list/coordinates is mock data — there's no hazard_assessments table yet (see CLAUDE.md). "เหตุการณ์
+// ล่าสุด" reads the shared `events` store (data/mockEvents.ts) so it stays consistent with the full
+// register on the เหตุการณ์ L&D page. Field names/terminology follow the HEVC data dictionary
+// (mskresilience.xlsx) so this UI won't need relabeling once a real backend lands.
+
+const communityRisks = communities.map((c) => {
+    const hevc = Math.round(seededValue(c.id) * 10) / 10;
+    return { ...c, hevc, level: riskLevelFromScore(hevc) };
+});
+
+// Static reference card recreating the "องค์ประกอบหลักของระบบ" (H-E-V-Capacity-Recovery-L&D) diagram the
+// project owner supplied as a design reference — not computed from any data source.
+const systemComponents = [
+    {
+        key: 'hazard',
+        label: 'Hazard',
+        color: '#2563eb',
+        icon: 'fa-solid fa-triangle-exclamation',
+        description: 'ความน่าจะเป็นและความรุนแรงของภัยพิบัติ',
+    },
+    {
+        key: 'exposure',
+        label: 'Exposure',
+        color: '#f97316',
+        icon: 'fa-solid fa-map-location-dot',
+        description: 'การเปิดรับต่อพื้นที่หรือทรัพย์สินที่เสี่ยงภัย',
+    },
+    {
+        key: 'vulnerability',
+        label: 'Vulnerability',
+        color: '#14b8a6',
+        icon: 'fa-solid fa-shield-heart',
+        description: 'ความเปราะบางทางกายภาพ สังคม และเศรษฐกิจ',
+    },
+    {
+        key: 'capacity',
+        label: 'Capacity',
+        color: '#8b5cf6',
+        icon: 'fa-solid fa-gear',
+        description: 'ศักยภาพในการรับมือ ทรัพยากร และมาตรการเตรียมพร้อม',
+    },
+    {
+        key: 'recovery',
+        label: 'Recovery',
+        color: '#22c55e',
+        icon: 'fa-solid fa-rotate',
+        description: 'ศักยภาพในการฟื้นตัวและกลับคืนสู่สภาพปกติ',
+    },
+    {
+        key: 'ld',
+        label: 'L&D',
+        color: '#ef4444',
+        icon: 'fa-solid fa-chart-line',
+        description: 'ความเสียหายและผลกระทบที่เกิดขึ้นจากภัยพิบัติ',
+    },
+];
 
 // ── Stat cards ───────────────────────────────────────────────────────────
-// "ชุมชนทั้งหมด" is real (drawn from the same 32-community dataset as the public map).
-// The rest have no backing data source yet (no risk-point / alert / user-activity tables) — mock for now.
-const totalCommunities = computed(() => communities.length);
-const trackedRiskPoints = 27;
-const todayAlertCount = 6;
-const systemUserCount = 14;
+const totalCommunities = communities.length;
+const cumulativeEvents = computed(() => events.value.length);
+const dataQualityPct = 81;
 
-// ── Risk-point breakdown (donut) — reuses the app-wide risk taxonomy/colors from Welcome.vue for consistency ──
-const riskBreakdown = [
-    { label: 'อุทกภัย', value: 8, color: riskColors.flood },
-    { label: 'อัคคีภัย', value: 6, color: riskColors.fire },
-    { label: 'คลื่นความร้อน', value: 5, color: riskColors.heat },
-    { label: 'วาตภัย', value: 4, color: riskColors.wind },
-    { label: 'PM 2.5', value: 2, color: riskColors.pm25 },
-    { label: 'อื่นๆ', value: 2, color: riskColors.none },
-];
+const avgHEVC = computed(() => (communityRisks.reduce((sum, c) => sum + c.hevc, 0) / communityRisks.length).toFixed(1));
 
-// ── Monthly trend (line) — last 6 months ending this month ──
-const thaiMonthsShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-const now = new Date();
-const trendCategories = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    return thaiMonthsShort[d.getMonth()];
+const dominantHazardKey = computed<Community['activeRisk']>(() => {
+    const counts: Partial<Record<Community['activeRisk'], number>> = {};
+    communities.forEach((c) => {
+        if (c.activeRisk === 'none') return;
+        counts[c.activeRisk] = (counts[c.activeRisk] ?? 0) + 1;
+    });
+    let best: Community['activeRisk'] = 'flood';
+    let bestCount = -1;
+    (Object.entries(counts) as [Community['activeRisk'], number][]).forEach(([key, count]) => {
+        if (count > bestCount) {
+            best = key;
+            bestCount = count;
+        }
+    });
+    return best;
 });
-const trendSeries = [
-    { label: 'อุทกภัย', color: riskColors.flood, data: [3, 4, 5, 6, 7, 8] },
-    { label: 'อัคคีภัย', color: riskColors.fire, data: [2, 3, 3, 4, 5, 6] },
-    { label: 'คลื่นความร้อน', color: riskColors.heat, data: [1, 2, 3, 5, 8, 11] },
-    { label: 'อื่นๆ', color: riskColors.none, data: [1, 1, 2, 2, 3, 3] },
-];
 
-// ── Mock alerts / latest records — using real community names from the shared dataset ──
+// ── คะแนนความเสี่ยงรายภัย (bar chart) — average mock HEVC per hazard type ──
+const perHazardBars = computed(() =>
+    hazardOrder.map((key) => {
+        const group = communityRisks.filter((c) => c.activeRisk === key);
+        const avg = group.length ? group.reduce((sum, c) => sum + c.hevc, 0) / group.length : 0;
+        return { label: hazardShortLabel[key], value: Math.round(avg * 10) / 10, color: riskColors[key] };
+    }),
+);
+
+// ── ชุมชนเสี่ยงสูงสุด ──
+const topRiskCommunities = computed(() => [...communityRisks].sort((a, b) => b.hevc - a.hevc).slice(0, 5));
+
+// ── เหตุการณ์ล่าสุด — latest 5 from the shared `events` store (data/mockEvents.ts), so this preview
+// stays consistent with the full register on the เหตุการณ์ L&D page ──
 type Severity = 'สูง' | 'ปานกลาง' | 'ต่ำ';
-type Status = 'ใหม่' | 'กำลังดำเนินการ';
 
 const severityClass: Record<Severity, string> = {
     สูง: 'bg-red-50 text-red-600',
     ปานกลาง: 'bg-orange-50 text-orange-600',
     ต่ำ: 'bg-slate-100 text-slate-500',
 };
-const statusClass: Record<Status, string> = {
-    ใหม่: 'bg-red-50 text-red-600',
-    กำลังดำเนินการ: 'bg-emerald-50 text-emerald-600',
-};
+const statusDotClass = { ยืนยันแล้ว: 'bg-emerald-500', กำลังตรวจสอบ: 'bg-amber-500' } as const;
+const statusTextClass = { ยืนยันแล้ว: 'text-emerald-600', กำลังตรวจสอบ: 'text-amber-600' } as const;
 
-interface AlertRow {
-    time: string;
-    typeLabel: string;
-    typeIcon: string;
-    typeColor: string;
-    detail: string;
-    area: string;
-    severity: Severity;
-    status: Status;
+// L3_DAMAGE_VALUE_THB isn't a severity field itself — this is a simple display-only proxy (no severity
+// column exists in the real เหตุการณ์_LD dictionary) so the "ระดับความรุนแรง" badge has something to show.
+function severityFromDamage(thb: number): Severity {
+    if (thb >= 3000000) return 'สูง';
+    if (thb >= 500000) return 'ปานกลาง';
+    return 'ต่ำ';
 }
 
-const recentAlerts: AlertRow[] = [
-    {
-        time: '08:35',
-        typeLabel: 'อุทกภัย',
-        typeIcon: 'fa-solid fa-water',
-        typeColor: riskColors.flood,
-        detail: 'ระดับน้ำเพิ่มขึ้นอย่างรวดเร็ว',
-        area: 'ชุมชนตักสิลา 2',
-        severity: 'สูง',
-        status: 'ใหม่',
-    },
-    {
-        time: '07:42',
-        typeLabel: 'PM 2.5',
-        typeIcon: 'fa-solid fa-smog',
-        typeColor: riskColors.pm25,
-        detail: 'ค่าฝุ่น PM2.5 เกินมาตรฐาน 59 μg/m³',
-        area: 'ชุมชนธัญญา 2',
-        severity: 'ปานกลาง',
-        status: 'ใหม่',
-    },
-    {
-        time: '07:15',
-        typeLabel: 'คลื่นความร้อน',
-        typeIcon: 'fa-solid fa-temperature-arrow-up',
-        typeColor: riskColors.heat,
-        detail: 'อุณหภูมิสูงสุดวันนี้ 38.6°C',
-        area: 'ชุมชนมหาชัย',
-        severity: 'ปานกลาง',
-        status: 'ใหม่',
-    },
-    {
-        time: '06:20',
-        typeLabel: 'อุทกภัย',
-        typeIcon: 'fa-solid fa-water',
-        typeColor: riskColors.flood,
-        detail: 'น้ำท่วมขังในพื้นที่ลุ่มต่ำ',
-        area: 'ชุมชนส่องใต้',
-        severity: 'สูง',
-        status: 'กำลังดำเนินการ',
-    },
-    {
-        time: '05:50',
-        typeLabel: 'วาตภัย',
-        typeIcon: 'fa-solid fa-wind',
-        typeColor: riskColors.wind,
-        detail: 'ลมกระโชกแรง ต้นไม้ล้มทับสายไฟ',
-        area: 'ชุมชนศรีสวัสดิ์ 2',
-        severity: 'ต่ำ',
-        status: 'กำลังดำเนินการ',
-    },
-];
-
-interface LatestRow extends AlertRow {
-    recordedBy: string;
-    updatedAt: string;
+const thaiMonthsShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+function formatThaiDate(iso: string) {
+    const d = new Date(iso);
+    return `${d.getDate()} ${thaiMonthsShort[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
 
-const latestRecords: LatestRow[] = recentAlerts.map((row, i) => ({
-    ...row,
-    recordedBy: ['นายสมชาย ใจดี', 'น.ส.วิลาวัลย์ คำดี', 'นายประสิทธิ์ รัตน์', 'น.ส.กนกวรรณ สีนา', 'นายพงพล แสงดี'][i],
-    updatedAt: `6 ส.ค. 2569 ${row.time}`,
-}));
+const recentEvents = computed(() =>
+    [...events.value]
+        .sort((a, b) => b.eventStart.localeCompare(a.eventStart))
+        .slice(0, 5)
+        .map((e) => ({
+            id: e.id,
+            hazard: e.primaryHazard,
+            community: communityName(e.communityId),
+            date: formatThaiDate(e.eventStart),
+            severity: severityFromDamage(e.l3DamageValueThb),
+            status: e.verificationStatus,
+        })),
+);
 
-// ── Mini map preview ──
+// ── Risk map ──
 const mapEl = ref<HTMLDivElement | null>(null);
 let map: L.Map | null = null;
+let satelliteTileLayer: L.TileLayer;
+let colorTileLayer: L.TileLayer;
+let grayTileLayer: L.TileLayer;
+let markersGroup: Partial<Record<Community['activeRisk'], L.FeatureGroup>> = {};
 
-function initMiniMap() {
+const mapStyle = ref<'satellite' | 'color' | 'gray'>('satellite');
+
+function setMapStyle(style: 'satellite' | 'color' | 'gray') {
+    if (!map) return;
+    const layers = { satellite: satelliteTileLayer, color: colorTileLayer, gray: grayTileLayer };
+    Object.entries(layers).forEach(([key, layer]) => {
+        if (key !== style && map!.hasLayer(layer)) map!.removeLayer(layer);
+    });
+    layers[style].addTo(map);
+    mapStyle.value = style;
+}
+
+const hazardToggles = hazardOrder.map((key) => ({ key, label: hazardShortLabel[key], icon: hazardIcons[key] }));
+const hazardEnabled = reactive<Record<string, boolean>>(Object.fromEntries(hazardOrder.map((key) => [key, true])));
+
+function applyHazardFilter() {
+    if (!map) return;
+    hazardOrder.forEach((key) => {
+        const group = markersGroup[key];
+        if (!group) return;
+        const isShown = map!.hasLayer(group);
+        if (hazardEnabled[key] && !isShown) {
+            fadeInGroup(group, map!);
+        } else if (!hazardEnabled[key] && isShown) {
+            fadeOutGroup(group, map!, () => !hazardEnabled[key]);
+        }
+    });
+}
+
+function toggleHazard(key: string) {
+    hazardEnabled[key] = !hazardEnabled[key];
+    applyHazardFilter();
+}
+
+// "เลือกชุมชน" / "ช่วงวันที่ข้อมูล" are real, working controls — bound to state, but (per spec) not yet
+// wired to actually filter the map/data. clearFilters() resets all three controls together.
+const DEFAULT_START_DATE = '2026-01-01';
+const DEFAULT_END_DATE = '2026-08-13';
+const selectedCommunityId = ref<number | 'all'>('all');
+const filterStartDate = ref(DEFAULT_START_DATE);
+const filterEndDate = ref(DEFAULT_END_DATE);
+
+function clearFilters() {
+    hazardOrder.forEach((key) => (hazardEnabled[key] = true));
+    applyHazardFilter();
+    selectedCommunityId.value = 'all';
+    filterStartDate.value = DEFAULT_START_DATE;
+    filterEndDate.value = DEFAULT_END_DATE;
+}
+
+function initRiskMap() {
     if (!mapEl.value) return;
 
-    map = L.map(mapEl.value, { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false }).setView(
-        MAP_CENTER,
-        13,
-    );
+    map = L.map(mapEl.value, { zoomControl: false }).setView(MAP_CENTER, 13);
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    satelliteTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         maxZoom: 19,
-    }).addTo(map);
+    });
+
+    colorTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap',
+        subdomains: 'abcd',
+        maxZoom: 20,
+    });
+
+    grayTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap',
+        subdomains: 'abcd',
+        maxZoom: 20,
+    });
+
+    satelliteTileLayer.addTo(map);
 
     L.polygon(MUNICIPALITY_BOUNDARY, {
         color: '#facc15',
-        weight: 2,
-        dashArray: '5 4',
+        weight: 2.5,
+        dashArray: '6 4',
         fill: false,
         interactive: false,
     }).addTo(map);
 
-    communities.forEach((com) => {
-        const color = riskColors[com.activeRisk];
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
+    markersGroup = {
+        flood: L.featureGroup().addTo(map),
+        fire: L.featureGroup().addTo(map),
+        wind: L.featureGroup().addTo(map),
+        heat: L.featureGroup().addTo(map),
+        pm25: L.featureGroup().addTo(map),
+        none: L.featureGroup().addTo(map),
+    };
+
+    const zoneById = new Map(communityZones.map((z) => [z.id, z]));
+
+    communityRisks.forEach((com) => {
+        const meta = riskLevelMeta[com.level];
+        const popupHtml = `
+            <div class="min-w-[160px] pb-1 text-center font-sans">
+                <h4 class="mb-1 text-sm font-bold text-slate-800">${com.name}</h4>
+                <p class="mb-1 text-xs text-slate-500">ภัยเด่น: ${riskNameTH[com.activeRisk]}</p>
+                <span class="inline-block rounded px-2 py-1 text-[10px] font-semibold" style="background-color:${meta.color}1a;color:${meta.color}">
+                    HEVC ${com.hevc} · ระดับ${meta.label}
+                </span>
+                <p class="mt-1.5 text-[10px] text-slate-400">*ขอบเขตพื้นที่เป็นการประมาณชั่วคราว รอไฟล์ shapefile จริง</p>
+            </div>
+        `;
+
+        // Zone fill — see data/communityZones.ts for why this is a Voronoi approximation, not a real boundary.
+        const zone = zoneById.get(com.id);
+        if (zone && zone.polygon.length >= 3) {
+            const zonePolygon = L.polygon(zone.polygon, {
+                color: meta.color,
+                weight: 1.5,
+                fillColor: meta.color,
+                fillOpacity: 0.45,
+            });
+            zonePolygon.bindPopup(popupHtml);
+            markersGroup[com.activeRisk]?.addLayer(zonePolygon);
+        }
+
         const icon = L.divIcon({
             className: '',
-            html: `<div style="background-color:${color}40;color:${color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;border:1.5px solid ${color};box-shadow:0 2px 6px rgba(0,0,0,0.15);">${com.id}</div>`,
+            html: `<div style="background-color:${meta.color};color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.25);">${com.id}</div>`,
             iconSize: [26, 26],
             iconAnchor: [13, 13],
+            popupAnchor: [0, -13],
         });
-        L.marker([com.lat, com.lng], { icon, interactive: false }).addTo(map!);
-    });
 
-    L.control.zoom({ position: 'topright' }).addTo(map);
+        const marker = L.marker([com.lat, com.lng], { icon });
+        marker.bindPopup(popupHtml);
+        markersGroup[com.activeRisk]?.addLayer(marker);
+    });
 }
 
-onMounted(() => initMiniMap());
+onMounted(() => initRiskMap());
 onUnmounted(() => {
     map?.remove();
     map = null;
 });
-
-const mapLegend = [
-    { label: 'น้ำท่วม', color: riskColors.flood },
-    { label: 'อัคคีภัย', color: riskColors.fire },
-    { label: 'ลมพายุ', color: riskColors.wind },
-    { label: 'ความร้อน', color: riskColors.heat },
-    { label: 'PM2.5', color: riskColors.pm25 },
-    { label: 'อื่นๆ', color: riskColors.none },
-];
 </script>
 
 <template>
@@ -188,213 +300,293 @@ const mapLegend = [
 
     <AdminLayout title="แดชบอร์ดผู้ดูแลระบบ">
         <div class="space-y-6">
-            <!-- Stat cards -->
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                    label="ชุมชนทั้งหมด"
-                    :value="totalCommunities"
-                    unit="ชุมชน"
-                    icon="fa-solid fa-users"
-                    icon-bg="bg-blue-50"
-                    icon-color="text-blue-600"
-                />
-                <StatCard
-                    label="จุดเสี่ยงที่ติดตาม"
-                    :value="trackedRiskPoints"
-                    unit="จุด"
-                    icon="fa-solid fa-location-dot"
-                    icon-bg="bg-red-50"
-                    icon-color="text-red-600"
-                />
-                <StatCard
-                    label="แจ้งเตือนวันนี้"
-                    :value="todayAlertCount"
-                    unit="รายการ"
-                    icon="fa-regular fa-bell"
-                    icon-bg="bg-orange-50"
-                    icon-color="text-orange-600"
-                />
-                <StatCard
-                    label="ผู้ใช้งานระบบ"
-                    :value="systemUserCount"
-                    unit="คน"
-                    icon="fa-solid fa-user-group"
-                    icon-bg="bg-emerald-50"
-                    icon-color="text-emerald-600"
-                />
+            <!-- Stat cards — grouped 3+2 to match the map/side-column widths of the row below -->
+            <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 xl:col-span-2">
+                    <StatCard
+                        label="จำนวนชุมชนทั้งหมด"
+                        :value="totalCommunities"
+                        unit="ชุมชน"
+                        icon="fa-solid fa-users"
+                        icon-bg="bg-blue-50"
+                        icon-color="text-blue-600"
+                    />
+                    <StatCard
+                        label="เหตุการณ์สะสม"
+                        :value="cumulativeEvents"
+                        unit="เหตุการณ์"
+                        icon="fa-regular fa-bell"
+                        icon-bg="bg-amber-50"
+                        icon-color="text-amber-600"
+                    />
+                    <StatCard
+                        label="ภัยเด่น"
+                        :value="hazardShortLabel[dominantHazardKey]"
+                        :icon="hazardIcons[dominantHazardKey]"
+                        :icon-bg="hazardBadgeClass[dominantHazardKey].bg"
+                        :icon-color="hazardBadgeClass[dominantHazardKey].color"
+                    />
+                </div>
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:col-span-1">
+                    <StatCard
+                        label="HEVC เฉลี่ย"
+                        :value="avgHEVC"
+                        unit="คะแนน"
+                        icon="fa-solid fa-gauge-high"
+                        icon-bg="bg-purple-50"
+                        icon-color="text-purple-600"
+                    />
+                    <StatCard
+                        label="คุณภาพข้อมูล"
+                        :value="dataQualityPct"
+                        unit="%"
+                        icon="fa-solid fa-database"
+                        icon-bg="bg-emerald-50"
+                        icon-color="text-emerald-600"
+                    />
+                </div>
             </div>
 
-            <!-- Map overview + recent alerts -->
+            <!-- Risk map + side panels -->
             <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
-                    <div class="mb-4 flex items-center justify-between">
-                        <h2 class="font-semibold text-slate-800">ภาพรวมแผนที่</h2>
-                    </div>
-                    <div class="relative h-80 overflow-hidden rounded-xl">
-                        <div ref="mapEl" class="h-full w-full"></div>
-                    </div>
-                    <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-                        <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-500">
-                            <span v-for="item in mapLegend" :key="item.label" class="flex items-center gap-1.5">
-                                <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: item.color }"></span>
-                                {{ item.label }}
-                            </span>
+                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100 xl:col-span-2">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                            <h2 class="font-semibold text-slate-800">แผนที่ความเสี่ยง อำเภอเมืองมหาสารคาม</h2>
+                            <p class="mt-0.5 text-[11px] text-amber-600">
+                                <i class="mr-1 fa-solid fa-triangle-exclamation"></i>
+                                ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริงจากผู้ว่าจ้าง
+                            </p>
                         </div>
-                        <Link href="/" class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700">
-                            <i class="fa-solid fa-up-right-and-down-left-from-center text-xs"></i>
-                            ดูแผนที่เต็มหน้า
-                        </Link>
-                    </div>
-                </div>
-
-                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-                    <div class="mb-3 flex items-center justify-between">
-                        <h2 class="font-semibold text-slate-800">แจ้งเตือนล่าสุด</h2>
-                        <span class="text-xs font-medium text-blue-600">ดูทั้งหมด</span>
-                    </div>
-                    <ul class="divide-y divide-slate-100">
-                        <li v-for="(alert, i) in recentAlerts" :key="i" class="flex items-start gap-3 py-3">
-                            <span
-                                class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                                :style="{ backgroundColor: alert.typeColor + '1a', color: alert.typeColor }"
-                            >
-                                <i :class="[alert.typeIcon, 'text-xs']"></i>
-                            </span>
-                            <div class="min-w-0 flex-1">
-                                <p class="truncate text-sm font-medium text-slate-700">{{ alert.detail }}</p>
-                                <p class="text-xs text-slate-400">{{ alert.time }} · {{ alert.area }}</p>
+                        <div class="flex items-center gap-3">
+                            <div class="flex items-center rounded-lg border border-slate-200 bg-slate-100/80 p-0.5">
+                                <button
+                                    type="button"
+                                    @click="setMapStyle('satellite')"
+                                    class="whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all"
+                                    :class="mapStyle === 'satellite' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                                >
+                                    ดาวเทียม
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="setMapStyle('color')"
+                                    class="whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all"
+                                    :class="mapStyle === 'color' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                                >
+                                    แผนที่สี
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="setMapStyle('gray')"
+                                    class="whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all"
+                                    :class="mapStyle === 'gray' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
+                                >
+                                    ขาวดำ
+                                </button>
                             </div>
-                            <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="statusClass[alert.status]">
-                                {{ alert.status }}
-                            </span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- Charts + quick menu -->
-            <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-                    <h2 class="mb-4 font-semibold text-slate-800">สัดส่วนประเภทความเสี่ยง</h2>
-                    <DonutChart :segments="riskBreakdown" center-label="จุดเสี่ยง" />
-                </div>
-
-                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
-                    <div class="mb-4 flex items-center justify-between">
-                        <h2 class="font-semibold text-slate-800">แนวโน้มเหตุการณ์รายเดือน</h2>
-                        <span class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500">6 เดือนล่าสุด</span>
+                            <span class="text-xs whitespace-nowrap text-slate-400">อัปเดตล่าสุด 13 ส.ค. 2569</span>
+                        </div>
                     </div>
-                    <TrendChart :categories="trendCategories" :series="trendSeries" />
-                </div>
-            </div>
 
-            <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
-                    <h2 class="mb-4 font-semibold text-slate-800">เมนูด่วน</h2>
-                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        <button
-                            v-for="item in [
-                                { label: 'เพิ่มจุดเสี่ยง', sub: 'เพิ่มจุดเสี่ยงใหม่', icon: 'fa-solid fa-location-dot', color: 'text-blue-600', bg: 'bg-blue-50' },
-                                { label: 'นำเข้าข้อมูล', sub: 'นำเข้าข้อมูลจากไฟล์', icon: 'fa-solid fa-cloud-arrow-up', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                                { label: 'สร้างรายงาน', sub: 'สร้างรายงานสรุป', icon: 'fa-solid fa-file-lines', color: 'text-purple-600', bg: 'bg-purple-50' },
-                                { label: 'จัดการผู้ใช้', sub: 'จัดการบัญชีผู้ใช้งาน', icon: 'fa-solid fa-user-gear', color: 'text-orange-600', bg: 'bg-orange-50' },
-                            ]"
-                            :key="item.label"
-                            type="button"
-                            title="อยู่ระหว่างการพัฒนา"
-                            class="flex flex-col items-start gap-2 rounded-xl border border-slate-100 p-4 text-left transition-colors hover:bg-slate-50"
+                    <div class="relative h-[480px] overflow-hidden rounded-xl">
+                        <div ref="mapEl" class="w-full h-full"></div>
+
+                        <!-- Filter panel -->
+                        <div
+                            class="custom-scrollbar absolute left-3 top-3 z-[400] max-h-[420px] w-60 overflow-y-auto rounded-xl border border-slate-100 bg-white/95 p-4 shadow-lg backdrop-blur"
                         >
-                            <span class="flex h-9 w-9 items-center justify-center rounded-lg" :class="[item.bg, item.color]">
-                                <i :class="item.icon"></i>
-                            </span>
-                            <span>
-                                <span class="block text-sm font-semibold text-slate-700">{{ item.label }}</span>
-                                <span class="block text-xs text-slate-400">{{ item.sub }}</span>
-                            </span>
-                        </button>
+                            <div class="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-800">
+                                <i class="text-xs fa-solid fa-filter text-slate-400"></i>
+                                ตัวกรองข้อมูล
+                            </div>
+
+                            <p class="mb-2 text-xs font-medium text-slate-500">เลือกภัย</p>
+                            <div class="mb-4 space-y-2">
+                                <label
+                                    v-for="hazard in hazardToggles"
+                                    :key="hazard.key"
+                                    class="flex items-center justify-between gap-2 text-xs cursor-pointer text-slate-600"
+                                >
+                                    <span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+                                        <i :class="[hazard.icon, 'w-3.5 shrink-0 text-center text-slate-400']"></i>
+                                        <span class="truncate">{{ hazard.label }}</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        :aria-checked="hazardEnabled[hazard.key]"
+                                        @click="toggleHazard(hazard.key)"
+                                        class="relative h-5 transition-colors rounded-full w-9 shrink-0"
+                                        :class="hazardEnabled[hazard.key] ? 'bg-blue-600' : 'bg-slate-200'"
+                                    >
+                                        <span
+                                            class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                                            :class="hazardEnabled[hazard.key] ? 'translate-x-4' : 'translate-x-0'"
+                                        ></span>
+                                    </button>
+                                </label>
+                            </div>
+
+                            <p class="mb-1.5 text-xs font-medium text-slate-500">เลือกชุมชน</p>
+                            <select
+                                v-model="selectedCommunityId"
+                                class="mb-4 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 focus:border-blue-500 focus:bg-white focus:outline-none"
+                            >
+                                <option value="all">ทั้งหมด ({{ totalCommunities }} ชุมชน)</option>
+                                <option v-for="com in communities" :key="com.id" :value="com.id">{{ com.name }}</option>
+                            </select>
+
+                            <p class="mb-1.5 text-xs font-medium text-slate-500">ช่วงวันที่ข้อมูล</p>
+                            <div class="mb-4 flex items-center gap-1.5 text-xs text-slate-500">
+                                <input
+                                    type="date"
+                                    v-model="filterStartDate"
+                                    class="w-0 min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1.5 text-center focus:border-blue-500 focus:bg-white focus:outline-none"
+                                />
+                                <span>–</span>
+                                <input
+                                    type="date"
+                                    v-model="filterEndDate"
+                                    class="w-0 min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1.5 text-center focus:border-blue-500 focus:bg-white focus:outline-none"
+                                />
+                            </div>
+
+                            <button
+                                type="button"
+                                @click="clearFilters"
+                                class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
+                            >
+                                <i class="fa-solid fa-rotate-left text-[10px]"></i>
+                                ล้างตัวกรอง
+                            </button>
+                        </div>
+
+                        <!-- Risk-level legend -->
+                        <div
+                            class="absolute bottom-3 right-3 z-[400] rounded-xl border border-slate-100 bg-white/95 px-3.5 py-3 text-xs shadow-lg backdrop-blur"
+                        >
+                            <p class="mb-1.5 font-semibold text-slate-700">ระดับความเสี่ยง</p>
+                            <div class="space-y-1">
+                                <span v-for="(meta, level) in riskLevelMeta" :key="level" class="flex items-center gap-1.5 text-slate-500">
+                                    <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: meta.color }"></span>
+                                    {{ meta.label }}
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="rounded-2xl border border-slate-100 bg-white p-5 text-sm text-slate-500 shadow-sm">
-                    <h2 class="mb-3 font-semibold text-slate-800">สรุปสถานะ</h2>
-                    <dl class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <dt>สถานะระบบ</dt>
-                            <dd class="flex items-center gap-1.5 font-medium text-emerald-600">
-                                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                                ปกติ
-                            </dd>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <dt>เวอร์ชันระบบ</dt>
-                            <dd class="font-medium text-slate-700">v2.1.0</dd>
-                        </div>
-                    </dl>
+                <div class="flex flex-col gap-6">
+                    <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                        <h2 class="mb-4 font-semibold text-slate-800">คะแนนความเสี่ยงรายภัย</h2>
+                        <BarChart :bars="perHazardBars" :max="100" />
+                    </div>
+
+                    <div class="flex-1 p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                        <h2 class="mb-4 font-semibold text-slate-800">ชุมชนเสี่ยงสูงสุด</h2>
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-slate-400">
+                                <tr>
+                                    <th class="pb-2 font-medium">อันดับ</th>
+                                    <th class="pb-2 font-medium">ชุมชน</th>
+                                    <th class="pb-2 font-medium text-right">คะแนน (HEVC)</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="(com, i) in topRiskCommunities" :key="com.id">
+                                    <td class="py-2 text-slate-400">{{ i + 1 }}</td>
+                                    <td class="py-2 font-medium text-slate-700">{{ com.name }}</td>
+                                    <td class="py-2 font-semibold text-right" :style="{ color: riskLevelMeta[com.level].color }">{{ com.hevc }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
-            <!-- Latest records table -->
-            <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-                <div class="flex items-center justify-between border-b border-slate-100 p-5">
-                    <h2 class="font-semibold text-slate-800">รายการข้อมูลล่าสุด</h2>
+            <!-- เหตุการณ์ล่าสุด + องค์ประกอบหลักของระบบ — side by side below the map row -->
+            <div class="grid items-start grid-cols-1 gap-6 xl:grid-cols-2">
+                <div class="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-100">
+                    <div class="flex items-center justify-between p-5 border-b border-slate-100">
+                        <h2 class="font-semibold text-slate-800">เหตุการณ์ล่าสุด</h2>
+                        <Link :href="route('events-ld.index')" class="text-xs font-medium text-blue-600 hover:text-blue-700">ดูทั้งหมด</Link>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs tracking-wider uppercase bg-slate-50 text-slate-400">
+                                <tr>
+                                    <th class="px-5 py-3 font-medium">รหัสเหตุการณ์</th>
+                                    <th class="px-5 py-3 font-medium">ประเภทภัย</th>
+                                    <th class="px-5 py-3 font-medium">ชุมชน</th>
+                                    <th class="px-5 py-3 font-medium">วันที่เกิดเหตุ</th>
+                                    <th class="px-5 py-3 font-medium">ระดับความรุนแรง</th>
+                                    <th class="px-5 py-3 font-medium">สถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="event in recentEvents" :key="event.id" class="hover:bg-slate-50">
+                                    <td class="px-5 py-3 font-medium text-blue-600 whitespace-nowrap">{{ event.id }}</td>
+                                    <td class="px-5 py-3 whitespace-nowrap">
+                                        <span class="inline-flex items-center gap-1.5" :style="{ color: riskColors[event.hazard] }">
+                                            <i :class="hazardIcons[event.hazard]"></i>
+                                            {{ riskNameTH[event.hazard] }}
+                                        </span>
+                                    </td>
+                                    <td class="px-5 py-3 whitespace-nowrap text-slate-600">{{ event.community }}</td>
+                                    <td class="px-5 py-3 whitespace-nowrap text-slate-400">{{ event.date }}</td>
+                                    <td class="px-5 py-3 whitespace-nowrap">
+                                        <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="severityClass[event.severity]">{{
+                                            event.severity
+                                        }}</span>
+                                    </td>
+                                    <td class="px-5 py-3 whitespace-nowrap">
+                                        <span class="inline-flex items-center gap-1.5 text-xs font-medium" :class="statusTextClass[event.status]">
+                                            <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass[event.status]"></span>
+                                            {{ event.status }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 text-xs tracking-wider text-slate-400 uppercase">
-                            <tr>
-                                <th class="px-5 py-3 font-medium">ชุมชน</th>
-                                <th class="px-5 py-3 font-medium">ประเภทความเสี่ยง</th>
-                                <th class="px-5 py-3 font-medium">รายละเอียด</th>
-                                <th class="px-5 py-3 font-medium">สถานะ</th>
-                                <th class="px-5 py-3 font-medium">ระดับความเสี่ยง</th>
-                                <th class="px-5 py-3 font-medium">ผู้บันทึก</th>
-                                <th class="px-5 py-3 font-medium">วันที่อัปเดต</th>
-                                <th class="px-5 py-3 font-medium">จัดการ</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            <tr v-for="(row, i) in latestRecords" :key="i" class="hover:bg-slate-50">
-                                <td class="px-5 py-3 font-medium whitespace-nowrap text-slate-700">{{ row.area }}</td>
-                                <td class="px-5 py-3 whitespace-nowrap">
-                                    <span class="inline-flex items-center gap-1.5" :style="{ color: row.typeColor }">
-                                        <i :class="row.typeIcon"></i>
-                                        {{ row.typeLabel }}
-                                    </span>
-                                </td>
-                                <td class="max-w-xs truncate px-5 py-3 text-slate-500">{{ row.detail }}</td>
-                                <td class="px-5 py-3 whitespace-nowrap">
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="statusClass[row.status]">{{ row.status }}</span>
-                                </td>
-                                <td class="px-5 py-3 whitespace-nowrap">
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="severityClass[row.severity]">{{ row.severity }}</span>
-                                </td>
-                                <td class="px-5 py-3 whitespace-nowrap text-slate-500">{{ row.recordedBy }}</td>
-                                <td class="px-5 py-3 whitespace-nowrap text-slate-400">{{ row.updatedAt }}</td>
-                                <td class="px-5 py-3 whitespace-nowrap">
-                                    <div class="flex items-center gap-3 text-slate-400">
-                                        <i class="fa-regular fa-eye cursor-pointer hover:text-slate-600"></i>
-                                        <i class="fa-regular fa-pen-to-square cursor-pointer hover:text-blue-600"></i>
-                                        <i class="fa-regular fa-trash-can cursor-pointer hover:text-red-600"></i>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm text-slate-500">
-                    <span>แสดง 1-5 จาก {{ trackedRiskPoints }} รายการ</span>
-                    <div class="flex items-center gap-1">
-                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
-                            <i class="fa-solid fa-chevron-left text-xs"></i>
-                        </button>
-                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 font-medium text-white">1</button>
-                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">2</button>
-                        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
-                            <i class="fa-solid fa-chevron-right text-xs"></i>
-                        </button>
+
+                <!-- องค์ประกอบหลักของระบบ — static reference card recreating the HEVC + Recovery + L&D component
+                     diagram the project owner supplied. -->
+                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                    <h2 class="mb-4 font-semibold text-slate-800">องค์ประกอบหลักของระบบ</h2>
+                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        <div
+                            v-for="comp in systemComponents"
+                            :key="comp.key"
+                            class="flex flex-col items-center p-4 text-center border rounded-2xl border-slate-100 bg-slate-50/60"
+                        >
+                            <span
+                                class="flex items-center justify-center mb-2 text-white rounded-full h-11 w-11"
+                                :style="{ backgroundColor: comp.color }"
+                            >
+                                <i :class="[comp.icon, 'text-lg']"></i>
+                            </span>
+                            <p class="text-sm font-bold" :style="{ color: comp.color }">{{ comp.label }}</p>
+                            <p class="mt-1 text-[11px] leading-snug text-slate-500">{{ comp.description }}</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </AdminLayout>
 </template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+    width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+</style>

@@ -17,9 +17,9 @@ class DashboardTest extends TestCase
         $response->assertRedirect('/login');
     }
 
-    public function test_admin_and_staff_can_visit_the_dashboard()
+    public function test_admin_staff_and_member_can_visit_the_dashboard()
     {
-        foreach ([UserRole::Admin, UserRole::Staff] as $role) {
+        foreach ([UserRole::Admin, UserRole::Staff, UserRole::Member] as $role) {
             $user = User::factory()->create(['role' => $role]);
             $this->actingAs($user);
 
@@ -28,12 +28,63 @@ class DashboardTest extends TestCase
         }
     }
 
-    public function test_members_cannot_visit_the_dashboard()
+    public function test_admin_and_staff_can_visit_data_import_but_member_cannot()
     {
-        $user = User::factory()->create(['role' => UserRole::Member]);
-        $this->actingAs($user);
+        foreach ([UserRole::Admin, UserRole::Staff] as $role) {
+            $user = User::factory()->create(['role' => $role]);
+            $this->actingAs($user);
 
-        $response = $this->get('/dashboard');
-        $response->assertStatus(403);
+            $this->get('/data-import')->assertStatus(200);
+        }
+
+        $member = User::factory()->create(['role' => UserRole::Member]);
+        $this->actingAs($member);
+
+        $this->get('/data-import')->assertStatus(403);
+    }
+
+    public function test_only_admin_can_visit_communities()
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+        $this->get('/communities')->assertStatus(200);
+
+        foreach ([UserRole::Staff, UserRole::Member] as $role) {
+            $user = User::factory()->create(['role' => $role]);
+            $this->actingAs($user);
+
+            $this->get('/communities')->assertStatus(403);
+        }
+    }
+
+    public function test_admin_and_staff_can_visit_hazard_analysis_and_events_ld_but_member_cannot()
+    {
+        foreach ([UserRole::Admin, UserRole::Staff] as $role) {
+            $user = User::factory()->create(['role' => $role]);
+            $this->actingAs($user);
+
+            $this->get('/hazard-analysis')->assertStatus(200);
+            $this->get('/events-ld')->assertStatus(200);
+        }
+
+        $member = User::factory()->create(['role' => UserRole::Member]);
+        $this->actingAs($member);
+
+        $this->get('/hazard-analysis')->assertStatus(403);
+        $this->get('/events-ld')->assertStatus(403);
+    }
+
+    public function test_only_admin_can_visit_scoring_criteria()
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $this->actingAs($admin);
+        $this->get('/scoring-criteria')->assertStatus(200);
+
+        foreach ([UserRole::Staff, UserRole::Member] as $role) {
+            $user = User::factory()->create(['role' => $role]);
+            $this->actingAs($user);
+
+            $this->get('/scoring-criteria')->assertStatus(403);
+        }
     }
 }

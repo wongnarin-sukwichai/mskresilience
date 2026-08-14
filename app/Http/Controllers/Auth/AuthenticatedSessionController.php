@@ -33,8 +33,6 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        // The /dashboard admin panel is gated to admin/staff — members have no back-office area yet,
-        // so send them back to the public homepage instead of into a redirect that 403s.
         $destination = $request->user()->canAccessAdminPanel() ? route('dashboard', absolute: false) : route('home', absolute: false);
 
         return redirect()->intended($destination);

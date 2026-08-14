@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { communityZones } from '@/data/communityZones';
+import { hazardIcons } from '@/data/hazardMeta';
 import { MAP_CENTER, MAP_ZOOM, MUNICIPALITY_BOUNDARY, communities, riskColors, riskNameTH, type Community } from '@/data/mahasarakham';
+import { fadeInGroup, fadeOutGroup } from '@/lib/leafletFade';
 import type { SharedData } from '@/types';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import L from 'leaflet';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -137,20 +140,24 @@ function setMapStyle(style: 'satellite' | 'color' | 'gray') {
 // Risk filter state
 const selectedRisk = ref<RiskFilter['value']>('all');
 
-function applyRiskFilter(selected: RiskFilter['value']) {
+function applyRiskFilter() {
     if (!map) return;
-    Object.values(markersGroup).forEach((group) => {
-        if (map!.hasLayer(group)) map!.removeLayer(group);
-    });
+    const shouldShow = (key: Community['activeRisk']) => selectedRisk.value === 'all' || key === selectedRisk.value;
 
-    if (selected === 'all') {
-        Object.values(markersGroup).forEach((group) => group.addTo(map!));
-    } else if (markersGroup[selected]) {
-        markersGroup[selected].addTo(map!);
-    }
+    (Object.keys(markersGroup) as Community['activeRisk'][]).forEach((key) => {
+        const group = markersGroup[key];
+        if (!group) return;
+        const isShown = map!.hasLayer(group);
+        const wantShown = shouldShow(key);
+        if (wantShown && !isShown) {
+            fadeInGroup(group, map!);
+        } else if (!wantShown && isShown) {
+            fadeOutGroup(group, map!, () => !shouldShow(key));
+        }
+    });
 }
 
-watch(selectedRisk, (value) => applyRiskFilter(value));
+watch(selectedRisk, () => applyRiskFilter());
 
 function focusMap(lat: number, lng: number) {
     map?.flyTo([lat, lng], 16, { animate: true, duration: 1.5 });
@@ -300,36 +307,57 @@ function initMap() {
         none: L.featureGroup().addTo(map),
     };
 
+    const zoneById = new Map(communityZones.map((z) => [z.id, z]));
+
     communities.forEach((com) => {
         const fillColor = riskColors[com.activeRisk];
         const isRisky = com.activeRisk !== 'none';
         const shortName = com.name.replace('ชุมชน', '');
 
-        const customIcon = L.divIcon({
-            className: '',
-            html: `
-                <div style="background-color: ${fillColor}40; color: ${fillColor}; border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 9.5px; font-family: 'Anuphan', sans-serif; font-weight: 500; text-align: center; border: 2px solid ${fillColor}; box-shadow: 0 4px 12px rgba(0,0,0,0.08); line-height: 1.05; padding: 2px; transition: all 0.3s ease; backdrop-filter: blur(2px);" class="cursor-pointer hover:scale-110">
-                    ${shortName}
-                </div>
-            `,
-            iconSize: [44, 44],
-            iconAnchor: [22, 22],
-            popupAnchor: [0, -22],
-        });
-
-        const marker = L.marker([com.lat, com.lng], { icon: customIcon });
-
         const badgeHtml = isRisky
             ? `<span class="inline-block px-2 py-1 text-[10px] font-semibold rounded bg-slate-100 border mt-2" style="color: ${fillColor}; border-color: ${fillColor}">ความเสี่ยงปัจจุบัน: ${riskNameTH[com.activeRisk]}</span>`
             : `<span class="inline-block px-2 py-1 text-[10px] font-semibold rounded bg-slate-100 border border-slate-300 text-slate-500 mt-2">สถานะปกติ</span>`;
 
-        marker.bindPopup(`
+        const popupHtml = `
             <div class="font-sans min-w-[150px] text-center pb-1">
                 <h4 class="font-bold text-slate-800 text-sm mb-0.5">${com.name}</h4>
                 <p class="text-xs text-slate-500">อ.เมือง จ.มหาสารคาม</p>
                 ${badgeHtml}
+                <p class="mt-1.5 text-[10px] text-slate-400">*ขอบเขตพื้นที่เป็นการประมาณชั่วคราว รอไฟล์ shapefile จริง</p>
             </div>
-        `);
+        `;
+
+        // Zone fill — see data/communityZones.ts for why this is a Voronoi approximation, not a real boundary.
+        const zone = zoneById.get(com.id);
+        if (zone && zone.polygon.length >= 3) {
+            const zonePolygon = L.polygon(zone.polygon, {
+                color: fillColor,
+                weight: 1.5,
+                fillColor,
+                fillOpacity: 0.3,
+            });
+            zonePolygon.bindPopup(popupHtml);
+            markersGroup[com.activeRisk]?.addLayer(zonePolygon);
+        }
+
+        // Rounded-name-tag style (replaces the old plain circle) — the community name reads in full
+        // (wraps to 2 lines if long) instead of a single-line abbreviation crammed into a circle.
+        // Homepage-only per product decision — the admin Dashboard.vue map keeps its numbered-circle
+        // style, so don't copy this over there.
+        const customIcon = L.divIcon({
+            className: '',
+            html: `
+                <div style="background-color: ${fillColor}; color: #ffffff; border: 2px solid #ffffff; border-radius: 10px; padding: 5px 9px; max-width: 92px; font-size: 11px; font-family: 'Anuphan', sans-serif; font-weight: 600; text-align: center; line-height: 1.15; word-break: break-word; box-shadow: 0 4px 12px rgba(0,0,0,0.18); transition: all 0.3s ease;" class="cursor-pointer hover:scale-110">
+                    ${shortName}
+                </div>
+            `,
+            iconSize: [100, 40],
+            iconAnchor: [50, 20],
+            popupAnchor: [0, -20],
+        });
+
+        const marker = L.marker([com.lat, com.lng], { icon: customIcon });
+        marker.bindPopup(popupHtml);
 
         markersGroup[com.activeRisk]?.addLayer(marker);
     });
@@ -362,17 +390,15 @@ onUnmounted(() => {
 
         <!-- Top Bar -->
         <header
-            class="fixed top-0 left-0 z-[60] flex h-[72px] w-full items-center justify-between border-b border-slate-200 bg-white/95 px-6 shadow-sm backdrop-blur-md transition-all lg:px-8"
+            class="fixed left-0 top-0 z-[60] flex h-[72px] w-full items-center justify-between border-b border-slate-200 bg-white/95 px-6 shadow-sm backdrop-blur-md transition-all lg:px-8"
         >
             <div class="flex shrink-0 items-center gap-4">
                 <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-inner">
                     <i class="fa-solid fa-shield-halved text-xl"></i>
                 </div>
                 <div class="flex flex-col">
-                    <h1 class="text-[17px] leading-tight font-bold whitespace-nowrap text-slate-800 lg:text-lg">ระบบบริหารข้อมูลความเสี่ยง</h1>
-                    <p class="mt-0.5 text-[11px] font-medium whitespace-nowrap text-slate-500 lg:text-xs">
-                        ความเปราะบางของชุมชน อ.เมือง จ.มหาสารคาม
-                    </p>
+                    <h1 class="whitespace-nowrap text-[17px] font-bold leading-tight text-slate-800 lg:text-lg">ระบบบริหารข้อมูลความเสี่ยง</h1>
+                    <p class="mt-0.5 whitespace-nowrap text-[11px] font-medium text-slate-500 lg:text-xs">ความเปราะบางของชุมชน อ.เมือง จ.มหาสารคาม</p>
                 </div>
             </div>
 
@@ -382,7 +408,7 @@ onUnmounted(() => {
                     <button
                         type="button"
                         @click="setMapStyle('satellite')"
-                        class="rounded-lg px-4 py-1.5 text-xs font-semibold whitespace-nowrap transition-all"
+                        class="whitespace-nowrap rounded-lg px-4 py-1.5 text-xs font-semibold transition-all"
                         :class="mapStyle === 'satellite' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                     >
                         ดาวเทียม
@@ -390,7 +416,7 @@ onUnmounted(() => {
                     <button
                         type="button"
                         @click="setMapStyle('color')"
-                        class="rounded-lg px-4 py-1.5 text-xs font-semibold whitespace-nowrap transition-all"
+                        class="whitespace-nowrap rounded-lg px-4 py-1.5 text-xs font-semibold transition-all"
                         :class="mapStyle === 'color' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                     >
                         แผนที่สี
@@ -398,7 +424,7 @@ onUnmounted(() => {
                     <button
                         type="button"
                         @click="setMapStyle('gray')"
-                        class="rounded-lg px-4 py-1.5 text-xs font-semibold whitespace-nowrap transition-all"
+                        class="whitespace-nowrap rounded-lg px-4 py-1.5 text-xs font-semibold transition-all"
                         :class="mapStyle === 'gray' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'"
                     >
                         ขาวดำ
@@ -416,7 +442,7 @@ onUnmounted(() => {
                     v-if="!authUser"
                     type="button"
                     @click="openLoginModal"
-                    class="flex shrink-0 items-center gap-2 rounded-full bg-blue-600 px-6 py-2 text-xs font-semibold whitespace-nowrap text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 lg:text-sm"
+                    class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-600 px-6 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 lg:text-sm"
                 >
                     <i class="fa-solid fa-user-lock"></i>
                     เข้าสู่ระบบ
@@ -426,7 +452,7 @@ onUnmounted(() => {
                     <button
                         type="button"
                         @click="userMenuOpen = !userMenuOpen"
-                        class="flex items-center gap-2 rounded-full bg-slate-100 py-1.5 pr-3 pl-1.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-200 lg:text-sm"
+                        class="flex items-center gap-2 rounded-full bg-slate-100 py-1.5 pl-1.5 pr-3 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-200 lg:text-sm"
                     >
                         <span class="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
                             {{ authUser.name.charAt(0) }}
@@ -468,20 +494,16 @@ onUnmounted(() => {
         <!-- Floating Sidebar -->
         <aside
             id="main-sidebar"
-            class="fixed top-20 left-4 z-[50] flex flex-col overflow-hidden rounded-2xl border border-white/50 bg-white/60 shadow-lg backdrop-blur-md hover:bg-white/95 hover:shadow-xl"
+            class="fixed left-4 top-20 z-[50] flex flex-col overflow-hidden rounded-2xl border border-white/50 bg-white/60 shadow-lg backdrop-blur-md hover:bg-white/95 hover:shadow-xl"
             :class="sidebarExpanded ? 'expanded h-[calc(100vh-6rem)] w-80' : 'w-16 cursor-pointer'"
             @click="activateSidebar"
         >
             <!-- Sidebar Header (Expanded Mode) -->
             <div v-if="sidebarExpanded" class="relative flex h-[65px] items-center justify-between border-b border-slate-100/50 p-4">
-                <h2 class="flex items-center font-semibold whitespace-nowrap text-slate-800">
+                <h2 class="flex items-center whitespace-nowrap font-semibold text-slate-800">
                     <i class="fa-solid fa-layer-group mr-2 text-blue-500"></i> ชั้นข้อมูล (Layers)
                 </h2>
-                <button
-                    type="button"
-                    class="rounded-full p-1 text-slate-400 transition-opacity hover:text-slate-600"
-                    @click.stop="deactivateSidebar"
-                >
+                <button type="button" class="rounded-full p-1 text-slate-400 transition-opacity hover:text-slate-600" @click.stop="deactivateSidebar">
                     <i class="fa-solid fa-compress text-sm"></i>
                 </button>
             </div>
@@ -508,7 +530,7 @@ onUnmounted(() => {
             <div v-if="sidebarExpanded" class="custom-scrollbar flex-1 overflow-y-auto p-4">
                 <!-- SECTION 1: Risks -->
                 <div class="mb-6">
-                    <h3 class="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">ประเภทความเสี่ยง (Risks)</h3>
+                    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">ประเภทความเสี่ยง (Risks)</h3>
                     <div class="grid grid-cols-1 gap-2">
                         <label
                             v-for="rf in riskFilters"
@@ -540,7 +562,7 @@ onUnmounted(() => {
 
                 <!-- SECTION 2: Communities List -->
                 <div>
-                    <h3 class="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">พื้นที่ 32 ชุมชน (เทศบาลเมืองมหาสารคาม)</h3>
+                    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">พื้นที่ 32 ชุมชน (เทศบาลเมืองมหาสารคาม)</h3>
                     <ul class="relative z-20 space-y-1">
                         <li
                             v-for="(com, index) in communities"
@@ -552,23 +574,42 @@ onUnmounted(() => {
                                 <span class="w-4 text-xs text-slate-400">{{ index + 1 }}.</span>
                                 <span class="ml-2 text-slate-700 transition-colors group-hover/list:text-blue-600">{{ com.name }}</span>
                             </div>
-                            <div class="h-2.5 w-2.5 rounded-full shadow-sm" :style="{ backgroundColor: riskColors[com.activeRisk] }"></div>
+                            <span
+                                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+                                :style="{ backgroundColor: riskColors[com.activeRisk] + '1a', color: riskColors[com.activeRisk] }"
+                                :title="riskNameTH[com.activeRisk]"
+                            >
+                                <i :class="[hazardIcons[com.activeRisk], 'text-[9px]']"></i>
+                            </span>
                         </li>
                     </ul>
                 </div>
             </div>
         </aside>
 
+        <!-- Placeholder-geodata disclaimer — the community zone shading is a Voronoi approximation, not a
+             real surveyed boundary (see data/communityZones.ts); this stays visible until the real
+             shapefile replaces it, not just noted in a code comment, since it renders as filled area
+             coverage a visitor could easily mistake for real boundaries at a glance. -->
+        <div class="fixed bottom-6 left-1/2 z-[45] -translate-x-1/2">
+            <div
+                class="flex items-center gap-2 rounded-full border border-amber-200 bg-white/90 px-4 py-2 text-xs font-medium text-amber-700 shadow-lg backdrop-blur-md"
+            >
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริงจากผู้ว่าจ้าง
+            </div>
+        </div>
+
         <!-- Quick Stats Overlay -->
         <div
-            class="fixed right-6 bottom-6 z-[40] hidden flex-nowrap justify-end gap-2 pointer-events-none transition-all duration-400 ease-in-out lg:flex xl:gap-3"
+            class="duration-400 pointer-events-none fixed bottom-6 right-6 z-[40] hidden flex-nowrap justify-end gap-2 transition-all ease-in-out lg:flex xl:gap-3"
             :class="sidebarExpanded ? 'left-[22rem]' : 'left-[5rem]'"
         >
             <div
-                class="min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform pointer-events-auto hover:-translate-y-1 xl:p-4"
+                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
             >
                 <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] leading-tight font-medium text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />อุทกภัย</p>
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />อุทกภัย</p>
                     <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-blue-50 text-blue-600">
                         <i class="fa-solid fa-water text-xs"></i>
                     </div>
@@ -580,10 +621,10 @@ onUnmounted(() => {
             </div>
 
             <div
-                class="min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform pointer-events-auto hover:-translate-y-1 xl:p-4"
+                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
             >
                 <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] leading-tight font-medium text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />อัคคีภัย</p>
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />อัคคีภัย</p>
                     <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-red-50 text-red-600">
                         <i class="fa-solid fa-fire text-xs"></i>
                     </div>
@@ -595,10 +636,10 @@ onUnmounted(() => {
             </div>
 
             <div
-                class="min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform pointer-events-auto hover:-translate-y-1 xl:p-4"
+                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
             >
                 <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] leading-tight font-medium text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />วาตภัย</p>
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />วาตภัย</p>
                     <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-teal-50 text-teal-600">
                         <i class="fa-solid fa-wind text-xs"></i>
                     </div>
@@ -610,10 +651,10 @@ onUnmounted(() => {
             </div>
 
             <div
-                class="min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform pointer-events-auto hover:-translate-y-1 xl:p-4"
+                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
             >
                 <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] leading-tight font-medium text-slate-500 xl:text-[12px]">คลื่นความร้อน<br />เฉลี่ย</p>
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">คลื่นความร้อน<br />เฉลี่ย</p>
                     <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600">
                         <i class="fa-solid fa-temperature-arrow-up text-xs"></i>
                     </div>
@@ -625,10 +666,10 @@ onUnmounted(() => {
             </div>
 
             <div
-                class="min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform pointer-events-auto hover:-translate-y-1 xl:p-4"
+                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
             >
                 <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] leading-tight font-medium text-slate-500 xl:text-[12px]">ค่าฝุ่น PM 2.5<br />เฉลี่ย</p>
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">ค่าฝุ่น PM 2.5<br />เฉลี่ย</p>
                     <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-purple-50 text-purple-600">
                         <i class="fa-solid fa-smog text-xs"></i>
                     </div>
@@ -673,7 +714,7 @@ onUnmounted(() => {
                 <!-- Login form -->
                 <form v-if="modalMode === 'login'" @submit.prevent="submitLogin" class="space-y-4 p-6">
                     <div>
-                        <label class="mb-1.5 block text-xs font-semibold tracking-wider text-slate-500 uppercase">อีเมล (Email)</label>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">อีเมล (Email)</label>
                         <div class="relative">
                             <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                                 <i class="fa-regular fa-envelope"></i>
@@ -684,7 +725,7 @@ onUnmounted(() => {
                                 required
                                 autocomplete="email"
                                 placeholder="example@domain.com"
-                                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pr-4 pl-9 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                             />
                         </div>
                         <p v-if="loginForm.errors.email" class="mt-1.5 text-xs text-red-600">{{ loginForm.errors.email }}</p>
@@ -692,7 +733,7 @@ onUnmounted(() => {
 
                     <div>
                         <div class="mb-1.5 flex items-center justify-between">
-                            <label class="block text-xs font-semibold tracking-wider text-slate-500 uppercase">รหัสผ่าน (Password)</label>
+                            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500">รหัสผ่าน (Password)</label>
                             <button type="button" @click="showForgotPassword" class="text-xs font-medium text-blue-600 hover:text-blue-700">
                                 ลืมรหัสผ่าน?
                             </button>
@@ -707,7 +748,7 @@ onUnmounted(() => {
                                 required
                                 autocomplete="current-password"
                                 placeholder="••••••••"
-                                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pr-4 pl-9 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                             />
                         </div>
                         <p v-if="loginForm.errors.password" class="mt-1.5 text-xs text-red-600">{{ loginForm.errors.password }}</p>
@@ -774,7 +815,7 @@ onUnmounted(() => {
                     <p class="text-sm text-slate-500">กรอกอีเมลที่ใช้เข้าสู่ระบบ เราจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้ทางอีเมล</p>
 
                     <div>
-                        <label class="mb-1.5 block text-xs font-semibold tracking-wider text-slate-500 uppercase">อีเมล (Email)</label>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">อีเมล (Email)</label>
                         <div class="relative">
                             <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
                                 <i class="fa-regular fa-envelope"></i>
@@ -785,7 +826,7 @@ onUnmounted(() => {
                                 required
                                 autocomplete="email"
                                 placeholder="example@domain.com"
-                                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pr-4 pl-9 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                                class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                             />
                         </div>
                         <p v-if="forgotForm.errors.email" class="mt-1.5 text-xs text-red-600">{{ forgotForm.errors.email }}</p>
@@ -809,7 +850,7 @@ onUnmounted(() => {
 
         <!-- Success Toast -->
         <div
-            class="fixed top-24 left-1/2 z-[100] flex w-full max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl bg-slate-900 px-5 py-3 text-white shadow-2xl transition-all duration-300"
+            class="fixed left-1/2 top-24 z-[100] flex w-full max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl bg-slate-900 px-5 py-3 text-white shadow-2xl transition-all duration-300"
             :class="toastVisible ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-[-20px] opacity-0'"
         >
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">

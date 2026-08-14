@@ -4,13 +4,14 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\UserRole;
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
     /**
@@ -54,10 +55,10 @@ class User extends Authenticatable
      * Single source of truth for both the post-login redirect and the
      * "already authenticated" guest-redirect (see AppServiceProvider) —
      * those two must never fall out of sync with each other or with the
-     * `role:admin,staff` middleware on the dashboard route.
+     * `role:admin,staff,member` middleware on the dashboard route.
      */
     public function canAccessAdminPanel(): bool
     {
-        return in_array($this->role, [UserRole::Admin, UserRole::Staff], true);
+        return in_array($this->role, [UserRole::Admin, UserRole::Staff, UserRole::Member], true);
     }
 }

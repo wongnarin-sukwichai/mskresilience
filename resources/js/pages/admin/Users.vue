@@ -11,7 +11,7 @@ defineProps<{
 const roleLabels: Record<UserRole, string> = {
     admin: 'ผู้ดูแลระบบ',
     staff: 'เจ้าหน้าที่',
-    member: 'สมาชิก',
+    member: 'บุคคลทั่วไป',
 };
 
 const roleBadgeClass: Record<UserRole, string> = {
@@ -103,7 +103,7 @@ function formatDate(value: string) {
 
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
-                    <thead class="bg-slate-50 text-xs tracking-wider text-slate-400 uppercase">
+                    <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
                         <tr>
                             <th class="px-5 py-3 font-medium">ชื่อ</th>
                             <th class="px-5 py-3 font-medium">อีเมล</th>
@@ -114,15 +114,15 @@ function formatDate(value: string) {
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         <tr v-for="user in users" :key="user.id" class="hover:bg-slate-50">
-                            <td class="px-5 py-3 font-medium whitespace-nowrap text-slate-700">{{ user.name }}</td>
-                            <td class="px-5 py-3 whitespace-nowrap text-slate-500">{{ user.email }}</td>
-                            <td class="px-5 py-3 whitespace-nowrap">
+                            <td class="whitespace-nowrap px-5 py-3 font-medium text-slate-700">{{ user.name }}</td>
+                            <td class="whitespace-nowrap px-5 py-3 text-slate-500">{{ user.email }}</td>
+                            <td class="whitespace-nowrap px-5 py-3">
                                 <span class="rounded-full px-2.5 py-1 text-xs font-semibold" :class="roleBadgeClass[user.role]">
                                     {{ roleLabels[user.role] }}
                                 </span>
                             </td>
-                            <td class="px-5 py-3 whitespace-nowrap text-slate-400">{{ formatDate(user.created_at) }}</td>
-                            <td class="px-5 py-3 whitespace-nowrap">
+                            <td class="whitespace-nowrap px-5 py-3 text-slate-400">{{ formatDate(user.created_at) }}</td>
+                            <td class="whitespace-nowrap px-5 py-3">
                                 <div class="flex items-center gap-3 text-slate-400">
                                     <button type="button" title="แก้ไข" @click="openEditModal(user)" class="hover:text-blue-600">
                                         <i class="fa-regular fa-pen-to-square"></i>
@@ -149,36 +149,40 @@ function formatDate(value: string) {
                     <h3 class="text-base font-semibold text-slate-800">
                         {{ modalMode === 'create' ? 'เพิ่มผู้ใช้ใหม่' : 'แก้ไขข้อมูลผู้ใช้' }}
                     </h3>
-                    <button type="button" @click="closeModal" class="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                    <button
+                        type="button"
+                        @click="closeModal"
+                        class="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    >
                         <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
 
                 <form @submit.prevent="submit" class="space-y-4 p-6">
                     <div>
-                        <label class="mb-1.5 block text-xs font-semibold tracking-wider text-slate-500 uppercase">ชื่อ-นามสกุล</label>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">ชื่อ-นามสกุล</label>
                         <input
                             v-model="form.name"
                             type="text"
                             required
-                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                         />
                         <p v-if="form.errors.name" class="mt-1.5 text-xs text-red-600">{{ form.errors.name }}</p>
                     </div>
 
                     <div>
-                        <label class="mb-1.5 block text-xs font-semibold tracking-wider text-slate-500 uppercase">อีเมล</label>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">อีเมล</label>
                         <input
                             v-model="form.email"
                             type="email"
                             required
-                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                         />
                         <p v-if="form.errors.email" class="mt-1.5 text-xs text-red-600">{{ form.errors.email }}</p>
                     </div>
 
                     <div>
-                        <label class="mb-1.5 block text-xs font-semibold tracking-wider text-slate-500 uppercase">
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
                             รหัสผ่าน{{ modalMode === 'edit' ? ' (เว้นว่างไว้หากไม่เปลี่ยน)' : '' }}
                         </label>
                         <input
@@ -186,16 +190,16 @@ function formatDate(value: string) {
                             type="password"
                             :required="modalMode === 'create'"
                             :placeholder="modalMode === 'edit' ? '••••••••' : ''"
-                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                         />
                         <p v-if="form.errors.password" class="mt-1.5 text-xs text-red-600">{{ form.errors.password }}</p>
                     </div>
 
                     <div>
-                        <label class="mb-1.5 block text-xs font-semibold tracking-wider text-slate-500 uppercase">สิทธิ์การใช้งาน</label>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">สิทธิ์การใช้งาน</label>
                         <select
                             v-model="form.role"
-                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                         >
                             <option v-for="opt in roleOptions" :key="opt" :value="opt">{{ roleLabels[opt] }}</option>
                         </select>
@@ -203,7 +207,11 @@ function formatDate(value: string) {
                     </div>
 
                     <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
-                        <button type="button" @click="closeModal" class="rounded-xl px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-800">
+                        <button
+                            type="button"
+                            @click="closeModal"
+                            class="rounded-xl px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                        >
                             ยกเลิก
                         </button>
                         <button

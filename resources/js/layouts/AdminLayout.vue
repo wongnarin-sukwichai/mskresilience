@@ -16,25 +16,44 @@ const user = computed(() => page.props.auth.user);
 const roleLabels: Record<string, string> = {
     admin: 'ผู้ดูแลระบบ',
     staff: 'เจ้าหน้าที่',
-    member: 'สมาชิก',
+    member: 'บุคคลทั่วไป',
 };
 
 const navItems = computed(() => [
     { label: 'แดชบอร์ด', icon: 'fa-solid fa-gauge', href: route('dashboard') },
-    // Managing accounts/roles is admin-only (routes/admin.php), so only show the link to admins —
-    // staff would just get a 403 clicking it.
-    ...(user.value.role === 'admin' ? [{ label: 'จัดการสมาชิก', icon: 'fa-solid fa-user-gear', href: route('users.index') }] : []),
-    { label: 'จัดการชุมชน', icon: 'fa-solid fa-users' },
-    { label: 'จุดเสี่ยง', icon: 'fa-solid fa-location-dot' },
-    { label: 'ชั้นข้อมูลแผนที่', icon: 'fa-solid fa-layer-group' },
-    { label: 'ข้อมูลเหตุการณ์', icon: 'fa-solid fa-triangle-exclamation' },
-    { label: 'ค่าล่าสุด', icon: 'fa-solid fa-gauge-high' },
-    { label: 'แจ้งเตือน', icon: 'fa-regular fa-bell' },
-    { label: 'รายงาน', icon: 'fa-solid fa-file-lines' },
-    { label: 'ตั้งค่า', icon: 'fa-solid fa-gear' },
+    // Data import, hazard analysis, and the L&D register are staff-level duties — admin/staff only,
+    // hidden from member.
+    ...(user.value.role === 'admin' || user.value.role === 'staff'
+        ? [
+              { label: 'นำเข้าข้อมูล', icon: 'fa-solid fa-cloud-arrow-up', href: route('data-import.index') },
+              { label: 'ภัยพิบัติรวม', icon: 'fa-solid fa-cloud-bolt', href: route('disaster-overview.index') },
+              { label: 'รายภัย', icon: 'fa-solid fa-calculator', href: route('hazard-analysis.index') },
+              { label: 'เหตุการณ์ L&D', icon: 'fa-solid fa-triangle-exclamation', href: route('events-ld.index') },
+          ]
+        : []),
+    // ตั้งค่า: for admin, a real expandable submenu holding account/role management, scoring-criteria
+    // weights, and community management — all admin-only (routes/admin.php), moved here from the top
+    // level per product decision. For staff/member it stays the inert roadmap placeholder it always was.
+    user.value.role === 'admin'
+        ? {
+              label: 'ตั้งค่า',
+              icon: 'fa-solid fa-gear',
+              children: [
+                  { label: 'จัดการสมาชิก', icon: 'fa-solid fa-user-gear', href: route('users.index') },
+                  { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
+                  { label: 'จัดการชุมชน', icon: 'fa-solid fa-users', href: route('communities.index') },
+              ],
+          }
+        : { label: 'ตั้งค่า', icon: 'fa-solid fa-gear' },
 ]);
 
 const isActive = (href?: string) => !!href && page.url === new URL(href, window.location.origin).pathname;
+
+// Auto-expand the ตั้งค่า submenu when the current page is one of its children, so a direct navigation
+// (or reload) to e.g. /communities doesn't leave the active link hidden inside a collapsed menu.
+const settingsOpen = ref(
+    user.value.role === 'admin' && [route('users.index'), route('scoring-criteria.index'), route('communities.index')].some((href) => isActive(href)),
+);
 
 const currentDateText = ref('');
 function updateDateText() {
@@ -101,24 +120,54 @@ onUnmounted(() => {
             </div>
 
             <nav class="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-4">
-                <component
-                    :is="item.href ? Link : 'div'"
-                    v-for="item in navItems"
-                    :key="item.label"
-                    :href="item.href"
-                    class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
-                    :class="
-                        isActive(item.href)
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : item.href
-                              ? 'text-slate-300 hover:bg-white/5 hover:text-white'
-                              : 'cursor-default text-slate-500'
-                    "
-                    :title="item.href ? undefined : 'อยู่ระหว่างการพัฒนา'"
-                >
-                    <i :class="[item.icon, 'w-4 text-center']"></i>
-                    {{ item.label }}
-                </component>
+                <template v-for="item in navItems" :key="item.label">
+                    <template v-if="item.children">
+                        <button
+                            type="button"
+                            class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
+                            :class="settingsOpen ? 'bg-white/5 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'"
+                            @click="settingsOpen = !settingsOpen"
+                        >
+                            <i :class="[item.icon, 'w-4 text-center']"></i>
+                            <span class="flex-1 text-left">{{ item.label }}</span>
+                            <i
+                                class="fa-solid fa-chevron-down text-[10px] text-slate-400 transition-transform"
+                                :class="settingsOpen ? 'rotate-180' : ''"
+                            ></i>
+                        </button>
+                        <div v-if="settingsOpen" class="ml-4 space-y-1 border-l border-white/10 py-1 pl-3">
+                            <Link
+                                v-for="child in item.children"
+                                :key="child.label"
+                                :href="child.href"
+                                class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors"
+                                :class="
+                                    isActive(child.href) ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                "
+                            >
+                                <i :class="[child.icon, 'w-4 text-center']"></i>
+                                {{ child.label }}
+                            </Link>
+                        </div>
+                    </template>
+                    <component
+                        :is="item.href ? Link : 'div'"
+                        v-else
+                        :href="item.href"
+                        class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
+                        :class="
+                            isActive(item.href)
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : item.href
+                                  ? 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                  : 'cursor-default text-slate-500'
+                        "
+                        :title="item.href ? undefined : 'อยู่ระหว่างการพัฒนา'"
+                    >
+                        <i :class="[item.icon, 'w-4 text-center']"></i>
+                        {{ item.label }}
+                    </component>
+                </template>
             </nav>
 
             <div class="border-t border-white/10 px-4 py-4 text-xs text-slate-400">
@@ -161,12 +210,14 @@ onUnmounted(() => {
                     <input
                         type="text"
                         placeholder="ค้นหาชุมชน, จุดเสี่ยง, เหตุการณ์..."
-                        class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pr-3 pl-9 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none"
+                        class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                     />
                 </div>
 
                 <div class="ml-auto flex shrink-0 items-center gap-2 lg:gap-4">
-                    <div class="hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-600 sm:flex">
+                    <div
+                        class="hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-600 sm:flex"
+                    >
                         <i class="fa-regular fa-calendar-days text-slate-400"></i>
                         {{ currentDateText }}
                         <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
@@ -175,20 +226,24 @@ onUnmounted(() => {
                     <button type="button" class="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
                         <i class="fa-regular fa-bell text-base"></i>
                         <span
-                            class="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+                            class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
                         >
                             6
                         </span>
                     </button>
 
                     <div ref="userMenuRef" class="relative">
-                        <button type="button" class="flex items-center gap-2 rounded-full py-1 pr-1 pl-1 hover:bg-slate-100" @click="userMenuOpen = !userMenuOpen">
+                        <button
+                            type="button"
+                            class="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 hover:bg-slate-100"
+                            @click="userMenuOpen = !userMenuOpen"
+                        >
                             <span class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-600">
                                 {{ user.name.charAt(0) }}
                             </span>
                             <span class="hidden text-left lg:block">
                                 <span class="block text-sm font-medium text-slate-700">{{ roleLabels[user.role] ?? user.role }}</span>
-                                <span class="block text-xs text-slate-400 capitalize">{{ user.role }}</span>
+                                <span class="block text-xs capitalize text-slate-400">{{ user.role }}</span>
                             </span>
                             <i class="fa-solid fa-chevron-down hidden text-[10px] text-slate-400 lg:block"></i>
                         </button>
@@ -208,7 +263,12 @@ onUnmounted(() => {
                                 <i class="fa-solid fa-user w-4 text-center text-slate-400"></i>
                                 โปรไฟล์ของฉัน
                             </Link>
-                            <Link :href="route('logout')" method="post" as="button" class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50">
+                            <Link
+                                :href="route('logout')"
+                                method="post"
+                                as="button"
+                                class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                            >
                                 <i class="fa-solid fa-right-from-bracket w-4 text-center"></i>
                                 ออกจากระบบ
                             </Link>

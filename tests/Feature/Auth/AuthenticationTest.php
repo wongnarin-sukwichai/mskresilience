@@ -18,30 +18,21 @@ class AuthenticationTest extends TestCase
         $response->assertStatus(200);
     }
 
-    public function test_admin_and_staff_are_redirected_to_the_dashboard_after_login()
+    public function test_admin_staff_and_member_are_redirected_to_the_dashboard_after_login()
     {
-        $user = User::factory()->create(['role' => UserRole::Admin]);
+        foreach ([UserRole::Admin, UserRole::Staff, UserRole::Member] as $role) {
+            $user = User::factory()->create(['role' => $role]);
 
-        $response = $this->post('/login', [
-            'email' => $user->email,
-            'password' => 'password',
-        ]);
+            $response = $this->post('/login', [
+                'email' => $user->email,
+                'password' => 'password',
+            ]);
 
-        $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
-    }
+            $this->assertAuthenticated();
+            $response->assertRedirect(route('dashboard', absolute: false));
 
-    public function test_members_are_redirected_to_the_homepage_after_login()
-    {
-        $user = User::factory()->create(['role' => UserRole::Member]);
-
-        $response = $this->post('/login', [
-            'email' => $user->email,
-            'password' => 'password',
-        ]);
-
-        $this->assertAuthenticated();
-        $response->assertRedirect(route('home', absolute: false));
+            $this->post('/logout');
+        }
     }
 
     public function test_users_can_not_authenticate_with_invalid_password()
@@ -69,25 +60,18 @@ class AuthenticationTest extends TestCase
     /**
      * Regression test: the `guest` middleware (on /login) redirects an already-authenticated
      * visitor away before their new login attempt is ever processed. Left at its Laravel default,
-     * that redirect always targets route('dashboard') if it exists — with no regard for role —
-     * which sent an already-logged-in member straight into a 403 instead of back to a usable page.
-     * See AppServiceProvider::boot() for the fix (RedirectIfAuthenticated::redirectUsing()).
+     * that redirect always targets route('dashboard') if it exists — with no regard for role. Any
+     * role not covered by User::canAccessAdminPanel() would get bounced into a 403 instead of a
+     * usable page. See AppServiceProvider::boot() for the fix (RedirectIfAuthenticated::redirectUsing()).
      */
-    public function test_already_authenticated_member_visiting_login_is_sent_home_not_to_the_403ing_dashboard()
+    public function test_already_authenticated_users_are_sent_to_the_dashboard_regardless_of_role()
     {
-        $user = User::factory()->create(['role' => UserRole::Member]);
+        foreach ([UserRole::Admin, UserRole::Staff, UserRole::Member] as $role) {
+            $user = User::factory()->create(['role' => $role]);
 
-        $response = $this->actingAs($user)->get('/login');
+            $response = $this->actingAs($user)->get('/login');
 
-        $response->assertRedirect(route('home', absolute: false));
-    }
-
-    public function test_already_authenticated_admin_visiting_login_is_sent_to_the_dashboard()
-    {
-        $user = User::factory()->create(['role' => UserRole::Admin]);
-
-        $response = $this->actingAs($user)->get('/login');
-
-        $response->assertRedirect(route('dashboard', absolute: false));
+            $response->assertRedirect(route('dashboard', absolute: false));
+        }
     }
 }

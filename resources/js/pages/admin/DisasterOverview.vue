@@ -20,7 +20,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 
 // Fully mock rollup — there's no hazard_assessments table yet (see CLAUDE.md), so every figure here is
 // derived deterministically from the real 32-community list in data/mahasarakham.ts via seededValue().
-// POPULATION/HOUSEHOLDS mirror the "Meta" input group จัดการชุมชน owns (a separate mock island there, not
+// POPULATION/HOUSEHOLDS mirror the "Meta" input group ข้อมูลชุมชน owns (a separate mock island there, not
 // re-imported — this page doesn't need them to match exactly, just to be the same realistic shape).
 // ~1/3 of communities are seeded as "ยังไม่ประเมิน" (assessed = false) — no per-hazard sheet has been
 // imported for them yet — to demonstrate the data-completeness tracking this rollup page exists for.
@@ -258,7 +258,7 @@ const dataGroups = [
 ];
 
 // ── ตารางข้อมูลภัยพิบัติรวมระดับชุมชน — filters + client-side pagination (10 rows/page, same convention
-// as จัดการชุมชน) ──
+// as ข้อมูลชุมชน) ──
 const filterLevel = ref<'all' | OverallLevel>('all');
 const filterHazard = ref<'all' | Community['activeRisk']>('all');
 const searchQuery = ref('');
@@ -358,26 +358,26 @@ onUnmounted(destroyZoneMap);
         </div>
 
         <!-- Stat row -->
-        <div class="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 xl:grid-cols-8">
+        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
             <div v-for="stat in statTiles" :key="stat.label" class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs rounded-lg shrink-0" :class="[stat.iconBg, stat.iconColor]">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs" :class="[stat.iconBg, stat.iconColor]">
                         <i :class="stat.icon"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">{{ stat.label }}</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ stat.value }}</span>
                     <span v-if="stat.unit" class="shrink-0 text-[10px] text-slate-400">{{ stat.unit }}</span>
                 </p>
             </div>
         </div>
 
-        <div class="grid items-start grid-cols-1 gap-6 xl:grid-cols-3">
+        <div class="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
             <div class="space-y-6 xl:col-span-2">
                 <!-- ตารางข้อมูลภัยพิบัติรวมระดับชุมชน -->
-                <div class="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-100">
-                    <div class="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-slate-100">
+                <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-5">
                         <h2 class="font-semibold text-slate-800">ตารางข้อมูลภัยพิบัติรวมระดับชุมชน</h2>
                         <div class="flex items-center gap-2">
                             <div class="flex items-center rounded-lg border border-slate-200 bg-slate-100/80 p-0.5">
@@ -402,7 +402,7 @@ onUnmounted(destroyZoneMap);
                             </div>
                             <button
                                 type="button"
-                                class="flex items-center gap-2 px-3 py-2 text-xs font-medium border rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+                                class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
                             >
                                 <i class="fa-solid fa-download"></i>
                                 ส่งออก
@@ -410,7 +410,7 @@ onUnmounted(destroyZoneMap);
                         </div>
                     </div>
 
-                    <div v-if="viewMode === 'table'" class="flex flex-wrap items-center gap-2 p-4 border-b border-slate-100">
+                    <div v-if="viewMode === 'table'" class="flex flex-wrap items-center gap-2 border-b border-slate-100 p-4">
                         <select
                             v-model="filterLevel"
                             class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 focus:border-blue-500 focus:bg-white focus:outline-none"
@@ -431,7 +431,7 @@ onUnmounted(destroyZoneMap);
                                 v-model="searchQuery"
                                 type="text"
                                 placeholder="ค้นหาชุมชน..."
-                                class="w-full py-2 pl-8 pr-3 text-xs border rounded-lg border-slate-200 bg-slate-50 text-slate-600 focus:border-blue-500 focus:bg-white focus:outline-none"
+                                class="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-xs text-slate-600 focus:border-blue-500 focus:bg-white focus:outline-none"
                             />
                         </div>
                     </div>
@@ -439,7 +439,7 @@ onUnmounted(destroyZoneMap);
                     <!-- Table view -->
                     <template v-if="viewMode === 'table'">
                         <div class="overflow-x-auto">
-                            <table class="w-full text-sm text-left">
+                            <table class="w-full text-left text-sm">
                                 <thead class="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
                                     <tr>
                                         <th class="px-4 py-2.5 font-medium">COMMUNITY_ID</th>
@@ -478,13 +478,13 @@ onUnmounted(destroyZoneMap);
                                         <td class="whitespace-nowrap px-4 py-2.5 text-slate-500">{{ row.l3DamageTotal.toLocaleString('th-TH') }}</td>
                                     </tr>
                                     <tr v-if="pagedRows.length === 0">
-                                        <td colspan="9" class="px-4 py-8 text-sm text-center text-slate-400">ไม่พบชุมชนที่ตรงกับตัวกรอง</td>
+                                        <td colspan="9" class="px-4 py-8 text-center text-sm text-slate-400">ไม่พบชุมชนที่ตรงกับตัวกรอง</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
 
-                        <div class="flex items-center justify-between px-5 py-3 text-sm border-t border-slate-100 text-slate-500">
+                        <div class="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm text-slate-500">
                             <span>
                                 แสดง {{ filteredRows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1 }}-{{
                                     Math.min(currentPage * pageSize, filteredRows.length)
@@ -496,16 +496,16 @@ onUnmounted(destroyZoneMap);
                                     type="button"
                                     @click="goToPage(currentPage - 1)"
                                     :disabled="currentPage === 1"
-                                    class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                    class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                    <i class="text-xs fa-solid fa-chevron-left"></i>
+                                    <i class="fa-solid fa-chevron-left text-xs"></i>
                                 </button>
                                 <button
                                     v-for="page in totalPages"
                                     :key="page"
                                     type="button"
                                     @click="goToPage(page)"
-                                    class="flex items-center justify-center w-8 h-8 text-sm rounded-lg"
+                                    class="flex h-8 w-8 items-center justify-center rounded-lg text-sm"
                                     :class="page === currentPage ? 'bg-blue-600 font-medium text-white' : 'text-slate-500 hover:bg-slate-100'"
                                 >
                                     {{ page }}
@@ -514,9 +514,9 @@ onUnmounted(destroyZoneMap);
                                     type="button"
                                     @click="goToPage(currentPage + 1)"
                                     :disabled="currentPage === totalPages"
-                                    class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                    class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                    <i class="text-xs fa-solid fa-chevron-right"></i>
+                                    <i class="fa-solid fa-chevron-right text-xs"></i>
                                 </button>
                             </div>
                         </div>
@@ -525,11 +525,11 @@ onUnmounted(destroyZoneMap);
                     <!-- Zone view — Leaflet with a basemap TileLayer, see the note above the viewMode ref -->
                     <div v-else class="p-4">
                         <p class="mb-3 text-[11px] text-amber-600">
-                            <i class="mr-1 fa-solid fa-triangle-exclamation"></i>
+                            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
                             ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริง — สีแสดงระดับความเสี่ยงรวม
                         </p>
                         <div ref="zoneMapEl" class="h-[420px] w-full rounded-xl bg-slate-50"></div>
-                        <div class="flex flex-wrap gap-3 mt-3">
+                        <div class="mt-3 flex flex-wrap gap-3">
                             <span v-for="(meta, level) in overallLevelMeta" :key="level" class="flex items-center gap-1.5 text-[11px] text-slate-500">
                                 <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: meta.color }"></span>
                                 {{ meta.label }}
@@ -541,12 +541,12 @@ onUnmounted(destroyZoneMap);
                 <!-- โครงสร้างข้อมูลในแผ่นภัยพิบัติรวม — field-dictionary reference, stacked under the table
                      instead of a separate full-width row, so the left column's height keeps pace with the
                      right sidebar instead of leaving the table card stretched with empty space. -->
-                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h2 class="mb-4 font-semibold text-slate-800">โครงสร้างข้อมูลในแผ่นภัยพิบัติรวม</h2>
                     <div class="grid grid-cols-2 gap-4 sm:grid-cols-6">
-                        <div v-for="g in dataGroups" :key="g.key" class="p-4 border rounded-xl border-slate-100">
+                        <div v-for="g in dataGroups" :key="g.key" class="rounded-xl border border-slate-100 p-4">
                             <span
-                                class="flex items-center justify-center mb-2 rounded-lg h-9 w-9"
+                                class="mb-2 flex h-9 w-9 items-center justify-center rounded-lg"
                                 :style="{ backgroundColor: g.color + '1a', color: g.color }"
                             >
                                 <i :class="g.icon"></i>
@@ -562,14 +562,14 @@ onUnmounted(destroyZoneMap);
 
             <!-- Right column -->
             <div class="space-y-6">
-                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h2 class="mb-4 font-semibold text-slate-800">ชุมชนเสี่ยงสูงสุด</h2>
-                    <table class="w-full text-sm text-left">
+                    <table class="w-full text-left text-sm">
                         <thead class="text-xs text-slate-400">
                             <tr>
                                 <th class="pb-2 font-medium">อันดับ</th>
                                 <th class="pb-2 font-medium">ชุมชน</th>
-                                <th class="pb-2 font-medium text-right">คะแนนรวมหลายภัย (HEVC)</th>
+                                <th class="pb-2 text-right font-medium">คะแนนรวมหลายภัย (HEVC)</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -577,7 +577,7 @@ onUnmounted(destroyZoneMap);
                                 <td class="py-2 text-slate-400">{{ i + 1 }}</td>
                                 <td class="py-2 font-medium text-slate-700">{{ row.name }}</td>
                                 <td
-                                    class="py-2 font-semibold text-right"
+                                    class="py-2 text-right font-semibold"
                                     :style="{ color: row.overallLevel ? riskLevelMeta[row.overallLevel].color : '#94a3b8' }"
                                 >
                                     {{ row.multiHazardHevc }}
@@ -587,12 +587,12 @@ onUnmounted(destroyZoneMap);
                     </table>
                 </div>
 
-                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h2 class="mb-4 font-semibold text-slate-800">สัดส่วนระดับความเสี่ยง</h2>
                     <DonutChart :segments="riskLevelSegments" center-label="ชุมชน" />
                 </div>
 
-                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h2 class="mb-4 font-semibold text-slate-800">คะแนนรายภัยเฉลี่ย</h2>
                     <BarChart :bars="perHazardBars" :max="100" />
                 </div>

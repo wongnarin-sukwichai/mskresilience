@@ -349,12 +349,12 @@ onUnmounted(() => {
 
             <!-- Risk map + side panels -->
             <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100 xl:col-span-2">
-                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm xl:col-span-2">
+                    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 class="font-semibold text-slate-800">แผนที่ความเสี่ยง อำเภอเมืองมหาสารคาม</h2>
                             <p class="mt-0.5 text-[11px] text-amber-600">
-                                <i class="mr-1 fa-solid fa-triangle-exclamation"></i>
+                                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
                                 ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริงจากผู้ว่าจ้าง
                             </p>
                         </div>
@@ -385,19 +385,19 @@ onUnmounted(() => {
                                     ขาวดำ
                                 </button>
                             </div>
-                            <span class="text-xs whitespace-nowrap text-slate-400">อัปเดตล่าสุด 13 ส.ค. 2569</span>
+                            <span class="whitespace-nowrap text-xs text-slate-400">อัปเดตล่าสุด 13 ส.ค. 2569</span>
                         </div>
                     </div>
 
                     <div class="relative h-[480px] overflow-hidden rounded-xl">
-                        <div ref="mapEl" class="w-full h-full"></div>
+                        <div ref="mapEl" class="h-full w-full"></div>
 
                         <!-- Filter panel -->
                         <div
                             class="custom-scrollbar absolute left-3 top-3 z-[400] max-h-[420px] w-60 overflow-y-auto rounded-xl border border-slate-100 bg-white/95 p-4 shadow-lg backdrop-blur"
                         >
-                            <div class="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-800">
-                                <i class="text-xs fa-solid fa-filter text-slate-400"></i>
+                            <div class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                <i class="fa-solid fa-filter text-xs text-slate-400"></i>
                                 ตัวกรองข้อมูล
                             </div>
 
@@ -406,7 +406,7 @@ onUnmounted(() => {
                                 <label
                                     v-for="hazard in hazardToggles"
                                     :key="hazard.key"
-                                    class="flex items-center justify-between gap-2 text-xs cursor-pointer text-slate-600"
+                                    class="flex cursor-pointer items-center justify-between gap-2 text-xs text-slate-600"
                                 >
                                     <span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
                                         <i :class="[hazard.icon, 'w-3.5 shrink-0 text-center text-slate-400']"></i>
@@ -417,7 +417,7 @@ onUnmounted(() => {
                                         role="switch"
                                         :aria-checked="hazardEnabled[hazard.key]"
                                         @click="toggleHazard(hazard.key)"
-                                        class="relative h-5 transition-colors rounded-full w-9 shrink-0"
+                                        class="relative h-5 w-9 shrink-0 rounded-full transition-colors"
                                         :class="hazardEnabled[hazard.key] ? 'bg-blue-600' : 'bg-slate-200'"
                                     >
                                         <span
@@ -478,26 +478,26 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex flex-col gap-6">
-                    <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                    <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                         <h2 class="mb-4 font-semibold text-slate-800">คะแนนความเสี่ยงรายภัย</h2>
                         <BarChart :bars="perHazardBars" :max="100" />
                     </div>
 
-                    <div class="flex-1 p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                    <div class="flex-1 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                         <h2 class="mb-4 font-semibold text-slate-800">ชุมชนเสี่ยงสูงสุด</h2>
-                        <table class="w-full text-sm text-left">
+                        <table class="w-full text-left text-sm">
                             <thead class="text-xs text-slate-400">
                                 <tr>
                                     <th class="pb-2 font-medium">อันดับ</th>
                                     <th class="pb-2 font-medium">ชุมชน</th>
-                                    <th class="pb-2 font-medium text-right">คะแนน (HEVC)</th>
+                                    <th class="pb-2 text-right font-medium">คะแนน (HEVC)</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 <tr v-for="(com, i) in topRiskCommunities" :key="com.id">
                                     <td class="py-2 text-slate-400">{{ i + 1 }}</td>
                                     <td class="py-2 font-medium text-slate-700">{{ com.name }}</td>
-                                    <td class="py-2 font-semibold text-right" :style="{ color: riskLevelMeta[com.level].color }">{{ com.hevc }}</td>
+                                    <td class="py-2 text-right font-semibold" :style="{ color: riskLevelMeta[com.level].color }">{{ com.hevc }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -506,15 +506,15 @@ onUnmounted(() => {
             </div>
 
             <!-- เหตุการณ์ล่าสุด + องค์ประกอบหลักของระบบ — side by side below the map row -->
-            <div class="grid items-start grid-cols-1 gap-6 xl:grid-cols-2">
-                <div class="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-100">
-                    <div class="flex items-center justify-between p-5 border-b border-slate-100">
+            <div class="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+                <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                    <div class="flex items-center justify-between border-b border-slate-100 p-5">
                         <h2 class="font-semibold text-slate-800">เหตุการณ์ล่าสุด</h2>
                         <Link :href="route('events-ld.index')" class="text-xs font-medium text-blue-600 hover:text-blue-700">ดูทั้งหมด</Link>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-sm text-left">
-                            <thead class="text-xs tracking-wider uppercase bg-slate-50 text-slate-400">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
                                 <tr>
                                     <th class="px-5 py-3 font-medium">รหัสเหตุการณ์</th>
                                     <th class="px-5 py-3 font-medium">ประเภทภัย</th>
@@ -526,21 +526,21 @@ onUnmounted(() => {
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 <tr v-for="event in recentEvents" :key="event.id" class="hover:bg-slate-50">
-                                    <td class="px-5 py-3 font-medium text-blue-600 whitespace-nowrap">{{ event.id }}</td>
-                                    <td class="px-5 py-3 whitespace-nowrap">
+                                    <td class="whitespace-nowrap px-5 py-3 font-medium text-blue-600">{{ event.id }}</td>
+                                    <td class="whitespace-nowrap px-5 py-3">
                                         <span class="inline-flex items-center gap-1.5" :style="{ color: riskColors[event.hazard] }">
                                             <i :class="hazardIcons[event.hazard]"></i>
                                             {{ riskNameTH[event.hazard] }}
                                         </span>
                                     </td>
-                                    <td class="px-5 py-3 whitespace-nowrap text-slate-600">{{ event.community }}</td>
-                                    <td class="px-5 py-3 whitespace-nowrap text-slate-400">{{ event.date }}</td>
-                                    <td class="px-5 py-3 whitespace-nowrap">
+                                    <td class="whitespace-nowrap px-5 py-3 text-slate-600">{{ event.community }}</td>
+                                    <td class="whitespace-nowrap px-5 py-3 text-slate-400">{{ event.date }}</td>
+                                    <td class="whitespace-nowrap px-5 py-3">
                                         <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="severityClass[event.severity]">{{
                                             event.severity
                                         }}</span>
                                     </td>
-                                    <td class="px-5 py-3 whitespace-nowrap">
+                                    <td class="whitespace-nowrap px-5 py-3">
                                         <span class="inline-flex items-center gap-1.5 text-xs font-medium" :class="statusTextClass[event.status]">
                                             <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass[event.status]"></span>
                                             {{ event.status }}
@@ -554,16 +554,16 @@ onUnmounted(() => {
 
                 <!-- องค์ประกอบหลักของระบบ — static reference card recreating the HEVC + Recovery + L&D component
                      diagram the project owner supplied. -->
-                <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+                <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h2 class="mb-4 font-semibold text-slate-800">องค์ประกอบหลักของระบบ</h2>
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         <div
                             v-for="comp in systemComponents"
                             :key="comp.key"
-                            class="flex flex-col items-center p-4 text-center border rounded-2xl border-slate-100 bg-slate-50/60"
+                            class="flex flex-col items-center rounded-2xl border border-slate-100 bg-slate-50/60 p-4 text-center"
                         >
                             <span
-                                class="flex items-center justify-center mb-2 text-white rounded-full h-11 w-11"
+                                class="mb-2 flex h-11 w-11 items-center justify-center rounded-full text-white"
                                 :style="{ backgroundColor: comp.color }"
                             >
                                 <i :class="[comp.icon, 'text-lg']"></i>

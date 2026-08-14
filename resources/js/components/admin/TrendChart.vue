@@ -69,7 +69,14 @@ function handleMove(event: MouseEvent) {
                 class="stroke-slate-100"
                 stroke-width="1"
             />
-            <text v-for="tick in yTicks" :key="'label-' + tick" :x="PAD_LEFT - 8" :y="yPos(tick) + 3" text-anchor="end" class="fill-slate-400 text-[9px]">
+            <text
+                v-for="tick in yTicks"
+                :key="'label-' + tick"
+                :x="PAD_LEFT - 8"
+                :y="yPos(tick) + 3"
+                text-anchor="end"
+                class="fill-slate-400 text-[9px]"
+            >
                 {{ tick }}
             </text>
             <text v-for="(cat, i) in categories" :key="cat" :x="xPos(i)" :y="HEIGHT - 6" text-anchor="middle" class="fill-slate-400 text-[9px]">

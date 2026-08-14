@@ -43,18 +43,19 @@ class DashboardTest extends TestCase
         $this->get('/data-import')->assertStatus(403);
     }
 
-    public function test_only_admin_can_visit_communities()
+    public function test_admin_and_staff_can_visit_community_data_but_member_cannot()
     {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-        $this->actingAs($admin);
-        $this->get('/communities')->assertStatus(200);
-
-        foreach ([UserRole::Staff, UserRole::Member] as $role) {
+        foreach ([UserRole::Admin, UserRole::Staff] as $role) {
             $user = User::factory()->create(['role' => $role]);
             $this->actingAs($user);
 
-            $this->get('/communities')->assertStatus(403);
+            $this->get('/community-data')->assertStatus(200);
         }
+
+        $member = User::factory()->create(['role' => UserRole::Member]);
+        $this->actingAs($member);
+
+        $this->get('/community-data')->assertStatus(403);
     }
 
     public function test_admin_and_staff_can_visit_hazard_analysis_and_events_ld_but_member_cannot()

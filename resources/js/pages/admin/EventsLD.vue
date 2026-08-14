@@ -370,87 +370,87 @@ onUnmounted(destroyZoneMap);
         </div>
 
         <!-- Stat row -->
-        <div class="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 xl:grid-cols-7">
+        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs text-blue-600 rounded-lg shrink-0 bg-blue-50">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-xs text-blue-600">
                         <i class="fa-solid fa-file-lines"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">เหตุการณ์ทั้งหมด</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ events.length }}</span
                     ><span class="text-[10px] text-slate-400">รายการ</span>
                 </p>
             </div>
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs rounded-lg shrink-0 bg-emerald-50 text-emerald-600">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-xs text-emerald-600">
                         <i class="fa-solid fa-circle-check"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">พร้อมรวมผล</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ completeEvents.length }}</span
                     ><span class="text-[10px] text-slate-400">รายการ</span>
                 </p>
             </div>
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs rounded-lg shrink-0 bg-amber-50 text-amber-600">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-xs text-amber-600">
                         <i class="fa-solid fa-triangle-exclamation"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">ข้อมูลไม่ครบ</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ incompleteEvents.length }}</span
                     ><span class="text-[10px] text-slate-400">รายการ</span>
                 </p>
             </div>
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs rounded-lg shrink-0 bg-amber-50 text-amber-600">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-xs text-amber-600">
                         <i class="fa-solid fa-coins"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">มูลค่าเสียหายรวม</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ (totalDamageThb / 1_000_000).toFixed(2) }}</span
                     ><span class="text-[10px] text-slate-400">ล้านบาท</span>
                 </p>
             </div>
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs text-red-600 rounded-lg shrink-0 bg-red-50">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-xs text-red-600">
                         <i class="fa-solid fa-house-chimney-crack"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">บ้านเสียหาย</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ totalHousesDamaged }}</span
                     ><span class="text-[10px] text-slate-400">หลัง</span>
                 </p>
             </div>
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs text-purple-600 rounded-lg shrink-0 bg-purple-50">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-xs text-purple-600">
                         <i class="fa-solid fa-user-injured"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">บาดเจ็บ / เสียชีวิต</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ totalInjuries }} / {{ totalDeaths }}</span
                     ><span class="text-[10px] text-slate-400">ราย</span>
                 </p>
             </div>
             <div class="rounded-xl border border-slate-100 bg-white p-3.5 shadow-sm">
                 <div class="flex items-center gap-2">
-                    <span class="flex items-center justify-center w-8 h-8 text-xs rounded-lg shrink-0 bg-emerald-50 text-emerald-600">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-xs text-emerald-600">
                         <i class="fa-solid fa-rotate"></i>
                     </span>
                     <p class="truncate text-[11px] leading-tight text-slate-500">Recovery เฉลี่ย</p>
                 </div>
-                <p class="flex items-baseline gap-1 mt-2 truncate">
+                <p class="mt-2 flex items-baseline gap-1 truncate">
                     <span class="text-lg font-bold text-slate-800">{{ avgRecoveryScore }}</span
                     ><span class="text-[10px] text-slate-400">คะแนน</span>
                 </p>
@@ -458,7 +458,7 @@ onUnmounted(destroyZoneMap);
         </div>
 
         <!-- Filter bar -->
-        <div class="flex flex-wrap items-center gap-3 p-5 mb-6 bg-white border shadow-sm rounded-2xl border-slate-100">
+        <div class="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
             <button
                 v-for="h in hazardOrder"
                 :key="h"
@@ -477,12 +477,12 @@ onUnmounted(destroyZoneMap);
 
             <select
                 v-model="filterVerification"
-                class="px-3 py-2 text-sm border shrink-0 rounded-xl border-slate-200 bg-slate-50 text-slate-700 focus:border-blue-500 focus:bg-white focus:outline-none"
+                class="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:bg-white focus:outline-none"
             >
                 <option value="all">สถานะตรวจสอบ: ทั้งหมด</option>
                 <option v-for="v in verificationOptions" :key="v" :value="v">{{ v }}</option>
             </select>
-            <div class="flex items-center gap-1 text-xs shrink-0">
+            <div class="flex shrink-0 items-center gap-1 text-xs">
                 <input
                     type="date"
                     v-model="filterStartDate"
@@ -501,14 +501,14 @@ onUnmounted(destroyZoneMap);
                     v-model="searchQuery"
                     type="text"
                     placeholder="ค้นหา EVENT_ID, ชุมชน..."
-                    class="w-full py-2 pl-8 pr-3 text-sm border rounded-xl border-slate-200 bg-slate-50 text-slate-700 focus:border-blue-500 focus:bg-white focus:outline-none"
+                    class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm text-slate-700 focus:border-blue-500 focus:bg-white focus:outline-none"
                 />
             </div>
         </div>
 
         <!-- ตารางทะเบียนเหตุการณ์ -->
-        <div class="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-100">
-            <div class="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-slate-100">
+        <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-5">
                 <h2 class="font-semibold text-slate-800">ตารางทะเบียนเหตุการณ์</h2>
                 <div class="flex items-center rounded-lg border border-slate-200 bg-slate-100/80 p-0.5">
                     <button
@@ -535,28 +535,28 @@ onUnmounted(destroyZoneMap);
             <template v-if="tableViewMode === 'table'">
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[1180px] text-left text-sm">
-                        <thead class="text-xs tracking-wider uppercase bg-slate-50 text-slate-400">
+                        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
                             <tr>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">EVENT_ID</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">COMMUNITY_NAME</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">PRIMARY_HAZARD</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">EVENT_START</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">EVENT_END</th>
-                                <th class="px-3 py-2 font-medium text-right whitespace-nowrap">L1_HOUSES</th>
-                                <th class="px-3 py-2 font-medium text-right whitespace-nowrap">L2_INJ</th>
-                                <th class="px-3 py-2 font-medium text-right whitespace-nowrap">L2_DEATHS</th>
-                                <th class="px-3 py-2 font-medium text-right whitespace-nowrap">L3_DAMAGE_THB</th>
-                                <th class="px-3 py-2 font-medium text-right whitespace-nowrap">L4_DAYS</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">R_OBSERVED</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">DATA_QUALITY</th>
-                                <th class="px-3 py-2 font-medium whitespace-nowrap">จัดการ</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">EVENT_ID</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">COMMUNITY_NAME</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">PRIMARY_HAZARD</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">EVENT_START</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">EVENT_END</th>
+                                <th class="whitespace-nowrap px-3 py-2 text-right font-medium">L1_HOUSES</th>
+                                <th class="whitespace-nowrap px-3 py-2 text-right font-medium">L2_INJ</th>
+                                <th class="whitespace-nowrap px-3 py-2 text-right font-medium">L2_DEATHS</th>
+                                <th class="whitespace-nowrap px-3 py-2 text-right font-medium">L3_DAMAGE_THB</th>
+                                <th class="whitespace-nowrap px-3 py-2 text-right font-medium">L4_DAYS</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">R_OBSERVED</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">DATA_QUALITY</th>
+                                <th class="whitespace-nowrap px-3 py-2 font-medium">จัดการ</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-for="event in pagedEvents" :key="event.id" class="hover:bg-slate-50">
-                                <td class="px-3 py-2 font-medium text-blue-600 whitespace-nowrap">{{ event.id }}</td>
-                                <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ communityName(event.communityId) }}</td>
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td class="whitespace-nowrap px-3 py-2 font-medium text-blue-600">{{ event.id }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-slate-700">{{ communityName(event.communityId) }}</td>
+                                <td class="whitespace-nowrap px-3 py-2">
                                     <span
                                         class="rounded-full px-2 py-0.5 text-[10px] font-semibold"
                                         :class="[hazardBadgeClass[event.primaryHazard].bg, hazardBadgeClass[event.primaryHazard].color]"
@@ -565,16 +565,16 @@ onUnmounted(destroyZoneMap);
                                     </span>
                                     <span v-if="isMultiHazard(event)" class="ml-1 text-[9px] text-slate-400">+หลายภัย</span>
                                 </td>
-                                <td class="px-3 py-2 whitespace-nowrap text-slate-400">{{ event.eventStart }}</td>
-                                <td class="px-3 py-2 whitespace-nowrap text-slate-400">{{ event.eventEnd }}</td>
-                                <td class="px-3 py-2 text-right whitespace-nowrap text-slate-600">{{ event.l1HousesDamaged }}</td>
-                                <td class="px-3 py-2 text-right whitespace-nowrap text-slate-600">{{ event.l2Injuries }}</td>
-                                <td class="px-3 py-2 text-right whitespace-nowrap text-slate-600">{{ event.l2Deaths }}</td>
-                                <td class="px-3 py-2 text-right whitespace-nowrap text-slate-600">
+                                <td class="whitespace-nowrap px-3 py-2 text-slate-400">{{ event.eventStart }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-slate-400">{{ event.eventEnd }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-right text-slate-600">{{ event.l1HousesDamaged }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-right text-slate-600">{{ event.l2Injuries }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-right text-slate-600">{{ event.l2Deaths }}</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-right text-slate-600">
                                     {{ event.l3DamageValueThb.toLocaleString('th-TH') }}
                                 </td>
-                                <td class="px-3 py-2 text-right whitespace-nowrap text-slate-600">{{ event.l4RecoveryDays }}</td>
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td class="whitespace-nowrap px-3 py-2 text-right text-slate-600">{{ event.l4RecoveryDays }}</td>
+                                <td class="whitespace-nowrap px-3 py-2">
                                     <span
                                         class="rounded-full px-2 py-0.5 text-[10px] font-semibold"
                                         :style="{
@@ -585,7 +585,7 @@ onUnmounted(destroyZoneMap);
                                         {{ eventRecoveryScore(event) }}
                                     </span>
                                 </td>
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td class="whitespace-nowrap px-3 py-2">
                                     <span
                                         v-if="event.dataQuality"
                                         class="rounded-full px-2 py-0.5 text-[10px] font-semibold"
@@ -595,7 +595,7 @@ onUnmounted(destroyZoneMap);
                                     </span>
                                     <span v-else class="text-slate-300">–</span>
                                 </td>
-                                <td class="px-3 py-2 whitespace-nowrap">
+                                <td class="whitespace-nowrap px-3 py-2">
                                     <div class="flex items-center gap-2.5 text-slate-400">
                                         <button type="button" title="แก้ไข" @click="openEditModal(event)" class="hover:text-blue-600">
                                             <i class="fa-regular fa-pen-to-square"></i>
@@ -607,7 +607,7 @@ onUnmounted(destroyZoneMap);
                                 </td>
                             </tr>
                             <tr v-if="pagedEvents.length === 0">
-                                <td colspan="13" class="px-3 py-10 text-sm text-center text-slate-400">ไม่พบเหตุการณ์ตามเงื่อนไขที่เลือก</td>
+                                <td colspan="13" class="px-3 py-10 text-center text-sm text-slate-400">ไม่พบเหตุการณ์ตามเงื่อนไขที่เลือก</td>
                             </tr>
                         </tbody>
                     </table>
@@ -615,7 +615,7 @@ onUnmounted(destroyZoneMap);
 
                 <div
                     v-if="filteredEvents.length > 0"
-                    class="flex items-center justify-between px-5 py-3 text-sm border-t border-slate-100 text-slate-500"
+                    class="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm text-slate-500"
                 >
                     <span>
                         แสดง {{ (currentPage - 1) * pageSize + 1 }}-{{ Math.min(currentPage * pageSize, filteredEvents.length) }} จาก
@@ -626,16 +626,16 @@ onUnmounted(destroyZoneMap);
                             type="button"
                             @click="goToPage(currentPage - 1)"
                             :disabled="currentPage === 1"
-                            class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            <i class="text-xs fa-solid fa-chevron-left"></i>
+                            <i class="fa-solid fa-chevron-left text-xs"></i>
                         </button>
                         <button
                             v-for="page in totalPages"
                             :key="page"
                             type="button"
                             @click="goToPage(page)"
-                            class="flex items-center justify-center w-8 h-8 text-sm rounded-lg"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-sm"
                             :class="page === currentPage ? 'bg-blue-600 font-medium text-white' : 'text-slate-500 hover:bg-slate-100'"
                         >
                             {{ page }}
@@ -644,9 +644,9 @@ onUnmounted(destroyZoneMap);
                             type="button"
                             @click="goToPage(currentPage + 1)"
                             :disabled="currentPage === totalPages"
-                            class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            <i class="text-xs fa-solid fa-chevron-right"></i>
+                            <i class="fa-solid fa-chevron-right text-xs"></i>
                         </button>
                     </div>
                 </div>
@@ -654,11 +654,11 @@ onUnmounted(destroyZoneMap);
 
             <div v-else class="p-4">
                 <p class="mb-3 text-[11px] text-amber-600">
-                    <i class="mr-1 fa-solid fa-triangle-exclamation"></i>
+                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>
                     ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริง — สีแสดงจำนวนเหตุการณ์ที่บันทึกไว้ตามตัวกรองปัจจุบัน
                 </p>
                 <div ref="zoneMapEl" class="h-[420px] w-full rounded-xl bg-slate-50"></div>
-                <div class="flex flex-wrap gap-3 mt-3">
+                <div class="mt-3 flex flex-wrap gap-3">
                     <span v-for="(meta, level) in densityMeta" :key="level" class="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: meta.color }"></span>
                         {{ meta.label }}
@@ -668,48 +668,48 @@ onUnmounted(destroyZoneMap);
         </div>
 
         <!-- Summary cards — below the table, full width -->
-        <div class="grid grid-cols-1 gap-6 mt-6 sm:grid-cols-4">
-            <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+        <div class="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-4">
+            <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                 <h2 class="mb-4 font-semibold text-slate-800">สถานะข้อมูล</h2>
                 <DonutChart :segments="dataStatusSegments" center-label="รายการ" />
             </div>
 
-            <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+            <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                 <h2 class="mb-1 font-semibold text-slate-800">แจกแจงประเภทภัย</h2>
                 <p class="mb-3 text-xs text-slate-400">รายการที่พร้อมรวมผล</p>
                 <BarChart :bars="hazardCompleteBars" />
             </div>
 
-            <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+            <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                 <h2 class="mb-4 font-semibold text-slate-800">ผลกระทบสะสม</h2>
                 <div class="grid grid-cols-2 gap-3">
-                    <div class="p-3 rounded-xl bg-slate-50">
-                        <i class="mb-1 text-red-500 fa-solid fa-house-chimney-crack"></i>
+                    <div class="rounded-xl bg-slate-50 p-3">
+                        <i class="fa-solid fa-house-chimney-crack mb-1 text-red-500"></i>
                         <p class="text-lg font-bold text-slate-800">{{ totalHousesDamaged }}</p>
                         <p class="text-[10px] text-slate-400">บ้านเสียหาย (หลัง)</p>
                     </div>
-                    <div class="p-3 rounded-xl bg-slate-50">
-                        <i class="mb-1 text-purple-500 fa-solid fa-user-injured"></i>
+                    <div class="rounded-xl bg-slate-50 p-3">
+                        <i class="fa-solid fa-user-injured mb-1 text-purple-500"></i>
                         <p class="text-lg font-bold text-slate-800">{{ totalInjuries }}</p>
                         <p class="text-[10px] text-slate-400">บาดเจ็บ (ราย)</p>
                     </div>
-                    <div class="p-3 rounded-xl bg-slate-50">
-                        <i class="mb-1 fa-solid fa-cross text-rose-600"></i>
+                    <div class="rounded-xl bg-slate-50 p-3">
+                        <i class="fa-solid fa-cross mb-1 text-rose-600"></i>
                         <p class="text-lg font-bold text-slate-800">{{ totalDeaths }}</p>
                         <p class="text-[10px] text-slate-400">เสียชีวิต (ราย)</p>
                     </div>
-                    <div class="p-3 rounded-xl bg-slate-50">
-                        <i class="mb-1 text-blue-500 fa-solid fa-calendar-day"></i>
+                    <div class="rounded-xl bg-slate-50 p-3">
+                        <i class="fa-solid fa-calendar-day mb-1 text-blue-500"></i>
                         <p class="text-lg font-bold text-slate-800">{{ avgRecoveryDays }}</p>
                         <p class="text-[10px] text-slate-400">วันฟื้นตัวเฉลี่ย</p>
                     </div>
                 </div>
             </div>
 
-            <div class="p-5 bg-white border shadow-sm rounded-2xl border-slate-100">
+            <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
                 <h2 class="mb-4 font-semibold text-slate-800">Recovery ที่สังเกตได้</h2>
                 <div class="flex items-center gap-5">
-                    <div class="relative w-20 h-20 shrink-0">
+                    <div class="relative h-20 w-20 shrink-0">
                         <svg viewBox="0 0 80 80" class="-rotate-90">
                             <circle cx="40" cy="40" :r="GAUGE_RADIUS" fill="none" stroke-width="8" class="stroke-slate-100" />
                             <circle
@@ -741,7 +741,7 @@ onUnmounted(destroyZoneMap);
                                     :style="{ width: (row.value / 5) * 100 + '%' }"
                                 ></span>
                             </span>
-                            <span class="w-8 font-semibold text-right shrink-0 text-slate-700">{{ row.value }}</span>
+                            <span class="w-8 shrink-0 text-right font-semibold text-slate-700">{{ row.value }}</span>
                         </div>
                     </div>
                 </div>
@@ -749,12 +749,12 @@ onUnmounted(destroyZoneMap);
         </div>
 
         <!-- กรอบข้อมูล L&D และ Recovery — field-dictionary reference -->
-        <div class="p-5 mt-6 bg-white border shadow-sm rounded-2xl border-slate-100">
+        <div class="mt-6 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
             <h2 class="mb-4 font-semibold text-slate-800">กรอบข้อมูล L&D และ Recovery</h2>
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                <div v-for="g in fieldGroups" :key="g.key" class="p-4 border rounded-xl border-slate-100">
+                <div v-for="g in fieldGroups" :key="g.key" class="rounded-xl border border-slate-100 p-4">
                     <span
-                        class="flex items-center justify-center mb-2 rounded-lg h-9 w-9"
+                        class="mb-2 flex h-9 w-9 items-center justify-center rounded-lg"
                         :style="{ backgroundColor: g.color + '1a', color: g.color }"
                     >
                         <i :class="g.icon"></i>
@@ -768,7 +768,7 @@ onUnmounted(destroyZoneMap);
         </div>
 
         <!-- Action bar -->
-        <div class="flex flex-col items-stretch justify-end gap-3 mt-6 sm:flex-row">
+        <div class="mt-6 flex flex-col items-stretch justify-end gap-3 sm:flex-row">
             <button
                 type="button"
                 @click="openCreateModal"
@@ -794,23 +794,23 @@ onUnmounted(destroyZoneMap);
             @click.self="closeModal"
         >
             <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
-                <div class="flex items-center justify-between px-6 py-4 border-b shrink-0 border-slate-100 bg-slate-50/50">
+                <div class="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
                     <h3 class="text-base font-semibold text-slate-800">
                         {{ modalMode === 'create' ? 'บันทึกเหตุการณ์ใหม่' : `แก้ไขเหตุการณ์ ${form.id}` }}
                     </h3>
                     <button
                         type="button"
                         @click="closeModal"
-                        class="flex items-center justify-center w-8 h-8 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        class="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                     >
-                        <i class="text-sm fa-solid fa-xmark"></i>
+                        <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
 
                 <form @submit.prevent="submit" class="overflow-y-auto">
-                    <div class="p-6 space-y-6">
+                    <div class="space-y-6 p-6">
                         <!-- กลุ่ม 1: ข้อมูลเหตุการณ์ -->
-                        <div class="p-4 border rounded-xl border-slate-100">
+                        <div class="rounded-xl border border-slate-100 p-4">
                             <p class="mb-3 text-sm font-semibold text-slate-700">ข้อมูลเหตุการณ์</p>
                             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div>
@@ -863,7 +863,7 @@ onUnmounted(destroyZoneMap);
                         </div>
 
                         <!-- กลุ่ม 2: Loss & Damage -->
-                        <div class="p-4 border rounded-xl border-slate-100">
+                        <div class="rounded-xl border border-slate-100 p-4">
                             <p class="mb-3 text-sm font-semibold text-slate-700">Loss & Damage</p>
                             <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
                                 <div>
@@ -891,7 +891,7 @@ onUnmounted(destroyZoneMap);
                                         <input
                                             type="checkbox"
                                             v-model="form.l5RepeatDamage"
-                                            class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                            class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                         />
                                         L5 ความเสียหายซ้ำ
                                     </label>
@@ -900,8 +900,8 @@ onUnmounted(destroyZoneMap);
                         </div>
 
                         <!-- กลุ่ม 3: Recovery ที่สังเกตได้ -->
-                        <div class="p-4 border rounded-xl border-slate-100">
-                            <div class="flex items-center justify-between mb-3">
+                        <div class="rounded-xl border border-slate-100 p-4">
+                            <div class="mb-3 flex items-center justify-between">
                                 <p class="text-sm font-semibold text-slate-700">Recovery ที่สังเกตได้</p>
                                 <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
                                     R_OBSERVED_SCORE (คำนวณอัตโนมัติ): {{ formRecoveryScore }}
@@ -932,7 +932,7 @@ onUnmounted(destroyZoneMap);
                         </div>
 
                         <!-- กลุ่ม 4: หลักฐาน/ธรรมาภิบาล -->
-                        <div class="p-4 border rounded-xl border-slate-100">
+                        <div class="rounded-xl border border-slate-100 p-4">
                             <p class="mb-3 text-sm font-semibold text-slate-700">หลักฐาน / ธรรมาภิบาล</p>
                             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div>
@@ -969,17 +969,17 @@ onUnmounted(destroyZoneMap);
                         </div>
                     </div>
 
-                    <div class="sticky bottom-0 flex items-center justify-end gap-3 px-6 py-4 bg-white border-t border-slate-100">
+                    <div class="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-100 bg-white px-6 py-4">
                         <button
                             type="button"
                             @click="closeModal"
-                            class="px-4 py-2 text-sm rounded-xl text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                            class="rounded-xl px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                         >
                             ยกเลิก
                         </button>
                         <button
                             type="submit"
-                            class="px-5 py-2 text-sm font-medium text-white transition-all bg-blue-600 shadow-sm rounded-xl hover:bg-blue-700"
+                            class="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700"
                         >
                             บันทึก
                         </button>

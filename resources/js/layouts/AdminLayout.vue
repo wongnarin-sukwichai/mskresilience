@@ -21,19 +21,22 @@ const roleLabels: Record<string, string> = {
 
 const navItems = computed(() => [
     { label: 'แดชบอร์ด', icon: 'fa-solid fa-gauge', href: route('dashboard') },
-    // Data import, hazard analysis, and the L&D register are staff-level duties — admin/staff only,
-    // hidden from member.
+    // Data import, community data, hazard analysis, and the L&D register are staff-level duties —
+    // admin/staff only, hidden from member. ข้อมูลชุมชน sits right after นำเข้าข้อมูล — it replaced the
+    // old admin-only "จัดการชุมชน" (removed from ตั้งค่า below) per product decision.
     ...(user.value.role === 'admin' || user.value.role === 'staff'
         ? [
               { label: 'นำเข้าข้อมูล', icon: 'fa-solid fa-cloud-arrow-up', href: route('data-import.index') },
+              { label: 'ข้อมูลชุมชน', icon: 'fa-solid fa-users', href: route('community-data.index') },
               { label: 'ภัยพิบัติรวม', icon: 'fa-solid fa-cloud-bolt', href: route('disaster-overview.index') },
               { label: 'รายภัย', icon: 'fa-solid fa-calculator', href: route('hazard-analysis.index') },
               { label: 'เหตุการณ์ L&D', icon: 'fa-solid fa-triangle-exclamation', href: route('events-ld.index') },
           ]
         : []),
-    // ตั้งค่า: for admin, a real expandable submenu holding account/role management, scoring-criteria
-    // weights, and community management — all admin-only (routes/admin.php), moved here from the top
-    // level per product decision. For staff/member it stays the inert roadmap placeholder it always was.
+    // ตั้งค่า: for admin, a real expandable submenu holding account/role management and scoring-criteria
+    // weights — both admin-only (routes/admin.php). Community management used to live here too
+    // (จัดการชุมชน) but was removed in favor of the flat ข้อมูลชุมชน item above. For staff/member it stays
+    // the inert roadmap placeholder it always was.
     user.value.role === 'admin'
         ? {
               label: 'ตั้งค่า',
@@ -41,7 +44,6 @@ const navItems = computed(() => [
               children: [
                   { label: 'จัดการสมาชิก', icon: 'fa-solid fa-user-gear', href: route('users.index') },
                   { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
-                  { label: 'จัดการชุมชน', icon: 'fa-solid fa-users', href: route('communities.index') },
               ],
           }
         : { label: 'ตั้งค่า', icon: 'fa-solid fa-gear' },
@@ -51,9 +53,7 @@ const isActive = (href?: string) => !!href && page.url === new URL(href, window.
 
 // Auto-expand the ตั้งค่า submenu when the current page is one of its children, so a direct navigation
 // (or reload) to e.g. /communities doesn't leave the active link hidden inside a collapsed menu.
-const settingsOpen = ref(
-    user.value.role === 'admin' && [route('users.index'), route('scoring-criteria.index'), route('communities.index')].some((href) => isActive(href)),
-);
+const settingsOpen = ref(user.value.role === 'admin' && [route('users.index'), route('scoring-criteria.index')].some((href) => isActive(href)));
 
 const currentDateText = ref('');
 function updateDateText() {

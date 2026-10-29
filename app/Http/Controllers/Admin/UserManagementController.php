@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\UserRole;
+use App\Enums\WorkGroup;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreUserRequest;
 use App\Http\Requests\Admin\UpdateUserRequest;
@@ -10,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,6 +24,7 @@ class UserManagementController extends Controller
     {
         return Inertia::render('admin/Users', [
             'users' => User::query()->orderBy('name')->get(),
+            'workGroups' => WorkGroup::options(),
         ]);
     }
 
@@ -36,6 +39,7 @@ class UserManagementController extends Controller
             'email' => $request->validated('email'),
             'password' => Hash::make($request->validated('password')),
             'role' => $request->validated('role'),
+            'work_groups' => $this->workGroupsFor($request->validated('role'), $request->validated('work_groups')),
             'email_verified_at' => now(),
         ]);
 
@@ -47,11 +51,14 @@ class UserManagementController extends Controller
      */
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
-        $this->guardLastAdmin($user, UserRole::from($request->validated('role')));
+        if ($message = $this->lastAdminViolation($user, UserRole::from($request->validated('role')))) {
+            throw ValidationException::withMessages(['role' => $message]);
+        }
 
         $user->name = $request->validated('name');
         $user->email = $request->validated('email');
         $user->role = $request->validated('role');
+        $user->work_groups = $this->workGroupsFor($request->validated('role'), $request->validated('work_groups'));
 
         if ($password = $request->validated('password')) {
             $user->password = Hash::make($password);
@@ -63,13 +70,17 @@ class UserManagementController extends Controller
     }
 
     /**
-     * Delete a user account.
+     * Delete a user account. Guard failures come back as an error toast (flash 'error'), not a 403 page.
      */
     public function destroy(User $user): RedirectResponse
     {
-        abort_if($user->is(Auth::user()), 403, 'ไม่สามารถลบบัญชีของตนเองได้');
+        if ($user->is(Auth::user())) {
+            return back()->with('error', 'ไม่สามารถลบบัญชีของตนเองได้');
+        }
 
-        $this->guardLastAdmin($user, null);
+        if ($message = $this->lastAdminViolation($user, null)) {
+            return back()->with('error', $message);
+        }
 
         $user->delete();
 
@@ -77,20 +88,33 @@ class UserManagementController extends Controller
     }
 
     /**
+     * Only staff store explicit groups: admin imports everything implicitly and member imports nothing
+     * (see User::canImport()), so their lists are always saved empty rather than kept stale.
+     *
+     * @param  list<string>|null  $groups
+     * @return list<string>
+     */
+    private function workGroupsFor(string $role, ?array $groups): array
+    {
+        return $role === UserRole::Staff->value ? array_values(array_unique($groups ?? [])) : [];
+    }
+
+    /**
      * Prevent the system's last admin account from being demoted or deleted, which would
      * lock every admin feature (including this one) behind an account nobody can use.
      * $newRole is null for a delete, or the role the account is being changed to for an update.
+     * Returns the Thai error message when the action would violate this, null otherwise.
      */
-    private function guardLastAdmin(User $user, ?UserRole $newRole): void
+    private function lastAdminViolation(User $user, ?UserRole $newRole): ?string
     {
         $losingAdminRole = $user->role === UserRole::Admin && $newRole !== UserRole::Admin;
 
         if (! $losingAdminRole) {
-            return;
+            return null;
         }
 
         $remainingAdmins = User::where('role', UserRole::Admin)->where('id', '!=', $user->id)->count();
 
-        abort_if($remainingAdmins === 0, 403, 'ต้องมีผู้ดูแลระบบ (admin) อย่างน้อย 1 บัญชีในระบบเสมอ');
+        return $remainingAdmins === 0 ? 'ต้องมีผู้ดูแลระบบ (admin) อย่างน้อย 1 บัญชีในระบบเสมอ' : null;
     }
 }

@@ -1,300 +1,542 @@
 <script setup lang="ts">
-import {
-    baselineWeights,
-    cloneWeights,
-    criteriaList,
-    groupSum,
-    weightGroups,
-    type ScoringCriteriaRecord,
-    type Weights,
-} from '@/data/mockScoringCriteria';
+import ConfirmDialog from '@/components/admin/ConfirmDialog.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import type { CriteriaSection, CriteriaTab, CriteriaWeights, ScoringCriteriaSet } from '@/types';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
-// Mock CRUD — there's no `scoring_criteria` table/controller yet (see CLAUDE.md). `criteriaList` is a
-// shared module-level ref (data/mockScoringCriteria.ts), not a local copy — the CRUD here mutates the
-// same store that รายภัย/เหตุการณ์ L&D read from, so this page's changes are actually visible elsewhere.
-//
-// Design carried over from the earlier discussion:
-// - Exactly one set is "ค่าเริ่มต้น" (default) — used for new calculations going forward.
-// - A set with any data already computed against it is "ล็อกแล้ว" (locked) — edits are blocked, only
-//   "คัดลอก" (clone into a new, unlocked, non-default set) is allowed, so historical scores stay
-//   reproducible even after weights change for future rounds.
+const props = defineProps<{
+    sets: ScoringCriteriaSet[];
+    schema: CriteriaTab[];
+}>();
 
-function nowLabel() {
-    const d = new Date();
-    const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    return `${String(d.getDate()).padStart(2, '0')} ${thaiMonths[d.getMonth()]} ${d.getFullYear() + 543}`;
+// ---------------------------------------------------------------------------------------------------------
+// Selected set + editor form. The form is (re)loaded from props only on explicit selection or after a
+// successful action — never via a props watcher, which would wipe the admin's edits when a save comes back
+// with validation errors.
+// ---------------------------------------------------------------------------------------------------------
+const selectedId = ref<number | null>(props.sets.find((s) => s.is_active)?.id ?? props.sets[0]?.id ?? null);
+const selectedSet = computed(() => props.sets.find((s) => s.id === selectedId.value) ?? null);
+const isLocked = computed(() => selectedSet.value?.is_locked ?? true);
+
+const form = useForm({
+    name: '',
+    weights: {} as CriteriaWeights,
+});
+
+function loadSelected() {
+    const set = selectedSet.value;
+    if (!set) return;
+    form.defaults({ name: set.name, weights: JSON.parse(JSON.stringify(set.weights)) });
+    form.reset();
+    form.clearErrors();
 }
+loadSelected();
 
-// ── Modal state ──
-const modalOpen = ref(false);
-const modalMode = ref<'create' | 'edit'>('create');
-const editingId = ref<number | null>(null);
-const form = ref<{ name: string; year: number; weights: Weights }>({ name: '', year: 2569, weights: baselineWeights() });
+const activeTab = ref(props.schema[0]?.key ?? '');
+const currentTab = computed(() => props.schema.find((t) => t.key === activeTab.value) ?? props.schema[0]);
 
-function openCreateModal() {
-    modalMode.value = 'create';
-    editingId.value = null;
-    form.value = { name: '', year: new Date().getFullYear() + 543 + 1, weights: baselineWeights() }; // suggest next พ.ศ. year
-    modalOpen.value = true;
-}
+// Switching to another set with unsaved edits asks first.
+const pendingSelectId = ref<number | null>(null);
 
-function openEditModal(criteria: ScoringCriteriaRecord) {
-    if (criteria.locked) return;
-    modalMode.value = 'edit';
-    editingId.value = criteria.id;
-    form.value = { name: criteria.name, year: criteria.year, weights: cloneWeights(criteria.weights) };
-    modalOpen.value = true;
-}
-
-function closeModal() {
-    modalOpen.value = false;
-}
-
-function submit() {
-    if (modalMode.value === 'create') {
-        const nextId = Math.max(0, ...criteriaList.value.map((c) => c.id)) + 1;
-        criteriaList.value.push({
-            id: nextId,
-            name: form.value.name,
-            year: form.value.year,
-            isDefault: false,
-            locked: false,
-            createdAt: nowLabel(),
-            weights: form.value.weights,
-        });
-    } else if (editingId.value !== null) {
-        const target = criteriaList.value.find((c) => c.id === editingId.value);
-        if (target) {
-            target.name = form.value.name;
-            target.year = form.value.year;
-            target.weights = form.value.weights;
-        }
+function selectSet(id: number) {
+    if (id === selectedId.value) return;
+    if (form.isDirty) {
+        pendingSelectId.value = id;
+        return;
     }
-    closeModal();
+    selectedId.value = id;
+    loadSelected();
 }
 
-function cloneCriteria(criteria: ScoringCriteriaRecord) {
-    const nextId = Math.max(0, ...criteriaList.value.map((c) => c.id)) + 1;
-    const copy: ScoringCriteriaRecord = {
-        id: nextId,
-        name: `${criteria.name} (สำเนา)`,
-        year: criteria.year,
-        isDefault: false,
-        locked: false,
-        createdAt: nowLabel(),
-        weights: cloneWeights(criteria.weights),
-    };
-    criteriaList.value.push(copy);
-    openEditModal(copy);
+function confirmDiscardAndSwitch() {
+    if (pendingSelectId.value !== null) selectedId.value = pendingSelectId.value;
+    pendingSelectId.value = null;
+    loadSelected();
 }
 
-function setDefault(criteria: ScoringCriteriaRecord) {
-    criteriaList.value.forEach((c) => (c.isDefault = c.id === criteria.id));
+// ---------------------------------------------------------------------------------------------------------
+// Client-side validation — mirrors App\Scoring\CriteriaSchema::validate() so problems show while typing;
+// the server re-checks everything on save.
+// ---------------------------------------------------------------------------------------------------------
+function cellValue(section: CriteriaSection, rowKey: string, colKey: string): unknown {
+    return form.weights[section.key]?.[rowKey]?.[colKey];
 }
 
-function destroyCriteria(criteria: ScoringCriteriaRecord) {
-    if (criteria.locked || criteria.isDefault) return;
-    if (!confirm(`ยืนยันลบชุดเกณฑ์ "${criteria.name}" ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`)) return;
-    criteriaList.value = criteriaList.value.filter((c) => c.id !== criteria.id);
+function cellError(section: CriteriaSection, rowKey: string, colKey: string): string | null {
+    const serverError = (form.errors as Record<string, string>)[`weights.${section.key}.${rowKey}.${colKey}`];
+    if (section.fixed) return null;
+    const value = cellValue(section, rowKey, colKey);
+    if (typeof value !== 'number' || Number.isNaN(value)) return 'กรุณากรอกตัวเลข';
+    if (value < 0 || value > 1) return 'ค่าต้องอยู่ระหว่าง 0 ถึง 1';
+    if (Math.abs(value * 10000 - Math.round(value * 10000)) > 1e-6) return 'ทศนิยมได้ไม่เกิน 4 ตำแหน่ง';
+    return serverError ?? null;
 }
 
-const formTotals = computed(() => weightGroups.map((g) => ({ key: g.key, sum: groupSum(form.value.weights, g.key) })));
+function rowSum(section: CriteriaSection, row: CriteriaSection['rows'][number]): number {
+    return Object.keys(row.cells)
+        .filter((col) => row.cells[col] !== null)
+        .reduce((sum, col) => {
+            const value = cellValue(section, row.key, col);
+            return sum + (typeof value === 'number' && !Number.isNaN(value) ? value : 0);
+        }, 0);
+}
+
+function rowSumOk(section: CriteriaSection, row: CriteriaSection['rows'][number]): boolean {
+    return !section.sum || Math.abs(rowSum(section, row) - 1) <= 0.00005;
+}
+
+function rowHasProblem(section: CriteriaSection, row: CriteriaSection['rows'][number]): boolean {
+    if (section.fixed) return false;
+    const cellProblem = Object.keys(row.cells).some((col) => row.cells[col] !== null && cellError(section, row.key, col));
+    return cellProblem || !rowSumOk(section, row);
+}
+
+function tabHasProblem(tab: CriteriaTab): boolean {
+    return tab.sections.some((section) => section.rows.some((row) => rowHasProblem(section, row)));
+}
+
+const formHasProblem = computed(() => props.schema.some(tabHasProblem) || form.name.trim() === '');
+
+function formatSum(value: number): string {
+    const rounded = Number(value.toFixed(4));
+    const decimals = (rounded.toString().split('.')[1] ?? '').length;
+    return rounded.toFixed(Math.max(2, decimals));
+}
+
+function sumDiffText(section: CriteriaSection, row: CriteriaSection['rows'][number]): string {
+    const diff = Number((rowSum(section, row) - 1).toFixed(4));
+    return diff > 0 ? `เกิน ${formatSum(diff)}` : `ขาด ${formatSum(-diff)}`;
+}
+
+function warnAboveHit(section: CriteriaSection, colKey: string): boolean {
+    const value = cellValue(section, 'ALL', colKey);
+    return section.warnAbove !== null && typeof value === 'number' && value > section.warnAbove;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------------------------------------
+function save() {
+    if (!selectedSet.value) return;
+    form.put(route('scoring-criteria.update', selectedSet.value.id), {
+        preserveScroll: true,
+        onSuccess: () => loadSelected(),
+    });
+}
+
+function postAction(name: 'activate' | 'lock' | 'unlock') {
+    if (!selectedSet.value) return;
+    router.post(route(`scoring-criteria.${name}`, selectedSet.value.id), {}, { preserveScroll: true, onSuccess: () => loadSelected() });
+}
+
+// Clone
+const cloneOpen = ref(false);
+const cloneForm = useForm({ name: '', copy_from: 0 });
+
+function openClone() {
+    if (!selectedSet.value) return;
+    cloneForm.clearErrors();
+    cloneForm.name = `${selectedSet.value.name} (สำเนา)`;
+    cloneForm.copy_from = selectedSet.value.id;
+    cloneOpen.value = true;
+}
+
+function submitClone() {
+    const newName = cloneForm.name.trim();
+    cloneForm.post(route('scoring-criteria.store'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            cloneOpen.value = false;
+            const created = props.sets.find((s) => s.name === newName);
+            if (created) {
+                selectedId.value = created.id;
+                loadSelected();
+            }
+        },
+    });
+}
+
+// Delete
+const deleteOpen = ref(false);
+const deleting = ref(false);
+const canDelete = computed(() => !!selectedSet.value && !selectedSet.value.is_active && !selectedSet.value.is_locked);
+
+function destroySet() {
+    if (!selectedSet.value) return;
+    deleting.value = true;
+    router.delete(route('scoring-criteria.destroy', selectedSet.value.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            deleteOpen.value = false;
+            selectedId.value = props.sets.find((s) => s.is_active)?.id ?? props.sets[0]?.id ?? null;
+            loadSelected();
+        },
+        onFinish: () => (deleting.value = false),
+    });
+}
+
+function formatDate(value: string) {
+    return new Date(value).toLocaleDateString('th-TH-u-ca-buddhist', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+const inputClass =
+    'w-24 rounded-lg border px-2.5 py-1.5 text-right font-mono text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500';
 </script>
 
 <template>
     <Head title="จัดการเกณฑ์คะแนน" />
 
     <AdminLayout title="จัดการเกณฑ์คะแนน">
-        <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-            <div class="flex items-center justify-between border-b border-slate-100 p-5">
-                <div>
-                    <h2 class="font-semibold text-slate-800">จัดการเกณฑ์คะแนน</h2>
-                    <p class="mt-0.5 text-sm text-slate-400">ชุดน้ำหนักคะแนนสำหรับคำนวณ HEVC ทั้งหมด {{ criteriaList.length }} ชุด</p>
+        <div class="grid gap-5 xl:grid-cols-4">
+            <!-- Set list -->
+            <div class="h-fit overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm xl:col-span-1">
+                <div class="border-b border-slate-100 p-5">
+                    <h2 class="font-semibold text-slate-800">ชุดเกณฑ์คะแนน</h2>
+                    <p class="mt-0.5 text-sm text-slate-400">ทั้งหมด {{ sets.length }} ชุด · ใช้งานได้ทีละ 1 ชุด</p>
                 </div>
-                <button
-                    type="button"
-                    @click="openCreateModal"
-                    class="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700"
-                >
-                    <i class="fa-solid fa-plus"></i>
-                    เพิ่มชุดเกณฑ์คะแนนใหม่
-                </button>
+                <ul class="divide-y divide-slate-100">
+                    <li v-for="set in sets" :key="set.id">
+                        <button
+                            type="button"
+                            class="flex w-full flex-col gap-1.5 px-5 py-3.5 text-left transition-colors"
+                            :class="set.id === selectedId ? 'bg-blue-50/70' : 'hover:bg-slate-50'"
+                            @click="selectSet(set.id)"
+                        >
+                            <span class="text-sm font-medium" :class="set.id === selectedId ? 'text-blue-700' : 'text-slate-700'">{{
+                                set.name
+                            }}</span>
+                            <span class="flex flex-wrap items-center gap-1.5 text-xs">
+                                <span v-if="set.is_active" class="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600">
+                                    <i class="fa-solid fa-circle-check mr-0.5"></i>ใช้งานอยู่
+                                </span>
+                                <span v-if="set.is_locked" class="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500">
+                                    <i class="fa-solid fa-lock mr-0.5"></i>ล็อก
+                                </span>
+                                <span v-else class="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-600">
+                                    <i class="fa-solid fa-lock-open mr-0.5"></i>แก้ไขได้
+                                </span>
+                                <span class="text-slate-400">แก้ไข {{ formatDate(set.updated_at) }}</span>
+                            </span>
+                        </button>
+                    </li>
+                </ul>
             </div>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
-                        <tr>
-                            <th class="px-5 py-3 font-medium">ชื่อชุดเกณฑ์</th>
-                            <th class="px-5 py-3 font-medium">ปีที่ใช้ (พ.ศ.)</th>
-                            <th class="px-5 py-3 font-medium">สถานะ</th>
-                            <th class="px-5 py-3 font-medium">สร้างเมื่อ</th>
-                            <th class="px-5 py-3 font-medium">จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <tr v-for="criteria in criteriaList" :key="criteria.id" class="hover:bg-slate-50">
-                            <td class="whitespace-nowrap px-5 py-3 font-medium text-slate-700">{{ criteria.name }}</td>
-                            <td class="whitespace-nowrap px-5 py-3 text-slate-500">{{ criteria.year }}</td>
-                            <td class="whitespace-nowrap px-5 py-3">
-                                <div class="flex flex-wrap gap-1.5">
-                                    <span v-if="criteria.isDefault" class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-600">
-                                        <i class="fa-solid fa-star mr-1 text-[10px]"></i>ค่าเริ่มต้น
-                                    </span>
-                                    <span
-                                        v-if="criteria.locked"
-                                        class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500"
-                                        title="มีข้อมูลคำนวณด้วยเกณฑ์นี้แล้ว แก้ไขไม่ได้ ใช้ปุ่มคัดลอกเพื่อสร้างฉบับใหม่แทน"
-                                    >
-                                        <i class="fa-solid fa-lock mr-1 text-[10px]"></i>ล็อกแล้ว
-                                    </span>
-                                    <span
-                                        v-if="!criteria.locked"
-                                        class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600"
-                                    >
-                                        แก้ไขได้
-                                    </span>
+            <!-- Editor -->
+            <div v-if="selectedSet" class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm xl:col-span-3">
+                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-5">
+                    <div class="min-w-0 flex-1">
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">ชื่อชุดเกณฑ์</label>
+                        <input
+                            v-model="form.name"
+                            type="text"
+                            :disabled="isLocked"
+                            class="w-full max-w-md rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                        />
+                        <p v-if="form.errors.name" class="mt-1.5 text-xs text-red-600">{{ form.errors.name }}</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button
+                            v-if="!selectedSet.is_active"
+                            type="button"
+                            @click="postAction('activate')"
+                            class="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                        >
+                            <i class="fa-solid fa-circle-check"></i>ตั้งเป็นชุดที่ใช้งาน
+                        </button>
+                        <button
+                            type="button"
+                            :disabled="form.isDirty"
+                            :title="form.isDirty ? 'บันทึกหรือยกเลิกการแก้ไขก่อน' : ''"
+                            @click="postAction(selectedSet.is_locked ? 'unlock' : 'lock')"
+                            class="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <i :class="selectedSet.is_locked ? 'fa-solid fa-lock-open' : 'fa-solid fa-lock'"></i>
+                            {{ selectedSet.is_locked ? 'ปลดล็อก' : 'ล็อก' }}
+                        </button>
+                        <button
+                            type="button"
+                            @click="openClone"
+                            class="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                        >
+                            <i class="fa-regular fa-copy"></i>คัดลอก
+                        </button>
+                        <button
+                            type="button"
+                            :disabled="!canDelete"
+                            :title="canDelete ? '' : 'ลบได้เฉพาะชุดที่ไม่ได้ใช้งานและไม่ได้ล็อก'"
+                            @click="deleteOpen = true"
+                            class="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <i class="fa-regular fa-trash-can"></i>ลบ
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="isLocked" class="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-sm text-slate-500">
+                    <i class="fa-solid fa-lock text-xs"></i>
+                    ชุดนี้ถูกล็อกอยู่ ดูได้อย่างเดียว — กด "ปลดล็อก" เพื่อแก้ไข
+                </div>
+
+                <!-- Tabs -->
+                <div class="flex gap-1 overflow-x-auto border-b border-slate-100 px-3 pt-3">
+                    <button
+                        v-for="tab in schema"
+                        :key="tab.key"
+                        type="button"
+                        class="relative shrink-0 rounded-t-lg px-3.5 py-2 text-sm font-medium transition-colors"
+                        :class="tab.key === activeTab ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'"
+                        @click="activeTab = tab.key"
+                    >
+                        {{ tab.label }}
+                        <span
+                            v-if="tabHasProblem(tab)"
+                            class="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white"
+                            title="มีค่าที่ไม่ถูกต้องในแท็บนี้"
+                        ></span>
+                    </button>
+                </div>
+
+                <!-- Sections of the current tab -->
+                <div class="space-y-6 p-5">
+                    <div v-for="section in currentTab.sections" :key="section.key">
+                        <h3 class="text-sm font-semibold text-slate-800">{{ section.title }}</h3>
+                        <p v-if="section.description" class="mt-0.5 text-xs text-slate-400">{{ section.description }}</p>
+
+                        <!-- List layout: one row, items stacked -->
+                        <div v-if="section.layout === 'list'" class="mt-3 max-w-xl overflow-hidden rounded-xl border border-slate-100">
+                            <div
+                                v-for="col in section.columns"
+                                :key="col.key"
+                                class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5 last:border-b-0"
+                            >
+                                <div class="min-w-0">
+                                    <p class="text-sm text-slate-700">{{ col.label }}</p>
+                                    <p class="font-mono text-[11px] text-slate-400">{{ col.key }}</p>
                                 </div>
-                            </td>
-                            <td class="whitespace-nowrap px-5 py-3 text-slate-400">{{ criteria.createdAt }}</td>
-                            <td class="whitespace-nowrap px-5 py-3">
-                                <div class="flex items-center gap-3 text-slate-400">
-                                    <button
-                                        v-if="!criteria.isDefault"
-                                        type="button"
-                                        title="ตั้งเป็นค่าเริ่มต้น"
-                                        @click="setDefault(criteria)"
-                                        class="hover:text-blue-600"
+                                <div class="text-right">
+                                    <div
+                                        v-if="section.fixed"
+                                        class="w-24 rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-right font-mono text-sm text-slate-500"
                                     >
-                                        <i class="fa-regular fa-star"></i>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        :title="criteria.locked ? 'ล็อกแล้ว แก้ไขไม่ได้' : 'แก้ไข'"
-                                        :disabled="criteria.locked"
-                                        @click="openEditModal(criteria)"
-                                        class="disabled:cursor-not-allowed disabled:opacity-30"
-                                        :class="!criteria.locked && 'hover:text-blue-600'"
-                                    >
-                                        <i class="fa-regular fa-pen-to-square"></i>
-                                    </button>
-                                    <button type="button" title="คัดลอกเป็นชุดใหม่" @click="cloneCriteria(criteria)" class="hover:text-blue-600">
-                                        <i class="fa-regular fa-copy"></i>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        :title="criteria.locked || criteria.isDefault ? 'ลบไม่ได้ (ล็อกแล้วหรือเป็นค่าเริ่มต้น)' : 'ลบ'"
-                                        :disabled="criteria.locked || criteria.isDefault"
-                                        @click="destroyCriteria(criteria)"
-                                        class="disabled:cursor-not-allowed disabled:opacity-30"
-                                        :class="!(criteria.locked || criteria.isDefault) && 'hover:text-red-600'"
-                                    >
-                                        <i class="fa-regular fa-trash-can"></i>
-                                    </button>
+                                        {{ formatSum(section.rows[0].cells[col.key] ?? 0) }}
+                                    </div>
+                                    <input
+                                        v-else
+                                        v-model.number="form.weights[section.key]['ALL'][col.key]"
+                                        type="number"
+                                        step="0.0001"
+                                        min="0"
+                                        max="1"
+                                        :disabled="isLocked"
+                                        :class="[
+                                            inputClass,
+                                            cellError(section, 'ALL', col.key)
+                                                ? 'border-red-300 bg-red-50 text-red-700 focus:ring-red-100'
+                                                : 'border-slate-200 bg-slate-50 text-slate-800 focus:border-blue-500 focus:ring-blue-100',
+                                        ]"
+                                    />
+                                    <p v-if="cellError(section, 'ALL', col.key)" class="mt-1 text-[11px] text-red-600">
+                                        {{ cellError(section, 'ALL', col.key) }}
+                                    </p>
+                                    <p v-else-if="warnAboveHit(section, col.key)" class="mt-1 max-w-[220px] text-[11px] text-amber-600">
+                                        <i class="fa-solid fa-triangle-exclamation mr-0.5"></i>เกิน {{ section.warnAbove }} —
+                                        ชุมชนที่ศักยภาพสูงอาจได้ค่าความเสี่ยงติดลบ
+                                    </p>
                                 </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                            </div>
+                            <div v-if="section.sum" class="flex items-center justify-between bg-slate-50 px-4 py-2.5 text-sm">
+                                <span class="font-medium text-slate-500">ผลรวม</span>
+                                <span
+                                    class="font-mono font-semibold"
+                                    :class="rowSumOk(section, section.rows[0]) ? 'text-emerald-600' : 'text-red-600'"
+                                >
+                                    {{ formatSum(rowSum(section, section.rows[0])) }}
+                                    <i
+                                        :class="rowSumOk(section, section.rows[0]) ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'"
+                                        class="ml-1"
+                                    ></i>
+                                    <span v-if="!rowSumOk(section, section.rows[0])" class="ml-1 text-xs font-normal">
+                                        ({{ sumDiffText(section, section.rows[0]) }})
+                                    </span>
+                                </span>
+                            </div>
+                            <p v-if="form.errors[`weights.${section.key}.ALL` as keyof typeof form.errors]" class="px-4 pb-2.5 text-xs text-red-600">
+                                {{ form.errors[`weights.${section.key}.ALL` as keyof typeof form.errors] }}
+                            </p>
+                        </div>
+
+                        <!-- Matrix layout: hazard × component -->
+                        <div v-else class="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-slate-50 text-xs text-slate-500">
+                                    <tr>
+                                        <th class="px-4 py-2.5 font-medium">ภัย</th>
+                                        <th
+                                            v-for="col in section.columns"
+                                            :key="col.key"
+                                            class="whitespace-nowrap px-3 py-2.5 text-center font-medium"
+                                        >
+                                            {{ col.label }}
+                                        </th>
+                                        <th class="whitespace-nowrap px-4 py-2.5 text-right font-medium">ผลรวม</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr v-for="row in section.rows" :key="row.key">
+                                        <td class="whitespace-nowrap px-4 py-2.5 font-medium text-slate-700">{{ row.label }}</td>
+                                        <td v-for="col in section.columns" :key="col.key" class="px-3 py-2 text-center align-top">
+                                            <span
+                                                v-if="row.cells[col.key] === null"
+                                                class="inline-block w-24 py-1.5 text-slate-300"
+                                                title="ไม่มีในสูตรของภัยนี้"
+                                                >–</span
+                                            >
+                                            <template v-else>
+                                                <input
+                                                    v-model.number="form.weights[section.key][row.key][col.key]"
+                                                    type="number"
+                                                    step="0.0001"
+                                                    min="0"
+                                                    max="1"
+                                                    :disabled="isLocked"
+                                                    :class="[
+                                                        inputClass,
+                                                        cellError(section, row.key, col.key)
+                                                            ? 'border-red-300 bg-red-50 text-red-700 focus:ring-red-100'
+                                                            : 'border-slate-200 bg-slate-50 text-slate-800 focus:border-blue-500 focus:ring-blue-100',
+                                                    ]"
+                                                />
+                                                <p v-if="cellError(section, row.key, col.key)" class="mt-1 text-[11px] text-red-600">
+                                                    {{ cellError(section, row.key, col.key) }}
+                                                </p>
+                                            </template>
+                                        </td>
+                                        <td class="whitespace-nowrap px-4 py-2.5 text-right align-top">
+                                            <span
+                                                class="font-mono font-semibold"
+                                                :class="rowSumOk(section, row) ? 'text-emerald-600' : 'text-red-600'"
+                                            >
+                                                {{ formatSum(rowSum(section, row)) }}
+                                                <i
+                                                    :class="rowSumOk(section, row) ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'"
+                                                    class="ml-1"
+                                                ></i>
+                                            </span>
+                                            <p v-if="!rowSumOk(section, row)" class="text-[11px] text-red-600">{{ sumDiffText(section, row) }}</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Save bar -->
+                <div v-if="!isLocked" class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5">
+                    <p class="text-sm" :class="formHasProblem ? 'text-red-600' : 'text-slate-400'">
+                        <template v-if="formHasProblem"
+                            ><i class="fa-solid fa-circle-exclamation mr-1"></i>มีค่าที่ไม่ถูกต้อง ดูแท็บที่มีจุดแดง</template
+                        >
+                        <template v-else-if="form.isDirty">มีการแก้ไขที่ยังไม่บันทึก</template>
+                        <template v-else>ทุกกลุ่มผลรวมถูกต้อง</template>
+                    </p>
+                    <div class="flex items-center gap-3">
+                        <button
+                            type="button"
+                            :disabled="!form.isDirty || form.processing"
+                            @click="loadSelected"
+                            class="rounded-xl px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            ยกเลิกการแก้ไข
+                        </button>
+                        <button
+                            type="button"
+                            :disabled="formHasProblem || !form.isDirty || form.processing"
+                            @click="save"
+                            class="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {{ form.processing ? 'กำลังบันทึก...' : 'บันทึก' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else class="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm text-slate-400 shadow-sm xl:col-span-3">
+                ยังไม่มีชุดเกณฑ์คะแนนในระบบ
             </div>
         </div>
 
-        <!-- Create / Edit Modal -->
+        <!-- Clone modal -->
         <div
-            v-if="modalOpen"
+            v-if="cloneOpen"
             class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
-            @click.self="closeModal"
+            @click.self="cloneOpen = false"
         >
-            <div class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
-                <div class="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
-                    <h3 class="text-base font-semibold text-slate-800">
-                        {{ modalMode === 'create' ? 'เพิ่มชุดเกณฑ์คะแนนใหม่' : 'แก้ไขชุดเกณฑ์คะแนน' }}
-                    </h3>
+            <div class="w-full max-w-md overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
+                <div class="flex items-center justify-between bg-blue-600 px-6 py-4">
+                    <h3 class="text-base font-semibold text-white">คัดลอกชุดเกณฑ์</h3>
                     <button
                         type="button"
-                        @click="closeModal"
-                        class="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        @click="cloneOpen = false"
+                        class="flex h-8 w-8 items-center justify-center rounded-full text-blue-100 hover:bg-white/15 hover:text-white"
                     >
                         <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
-
-                <form @submit.prevent="submit" class="overflow-y-auto">
-                    <div class="space-y-5 p-6">
-                        <div class="grid grid-cols-3 gap-4">
-                            <div class="col-span-2">
-                                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">ชื่อชุดเกณฑ์</label>
-                                <input
-                                    v-model="form.name"
-                                    type="text"
-                                    required
-                                    class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                                />
-                            </div>
-                            <div>
-                                <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">ปีที่ใช้ (พ.ศ.)</label>
-                                <input
-                                    v-model.number="form.year"
-                                    type="number"
-                                    required
-                                    class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
-                                />
-                            </div>
-                        </div>
-
-                        <div v-for="group in weightGroups" :key="group.key" class="rounded-xl border border-slate-100 p-4">
-                            <div class="mb-3 flex items-center justify-between">
-                                <p class="text-sm font-semibold text-slate-700">{{ group.title }}</p>
-                                <span
-                                    class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                                    :class="
-                                        Math.abs((formTotals.find((t) => t.key === group.key)?.sum ?? 0) - 1) < 0.001
-                                            ? 'bg-emerald-50 text-emerald-600'
-                                            : 'bg-amber-50 text-amber-600'
-                                    "
-                                >
-                                    รวม {{ formTotals.find((t) => t.key === group.key)?.sum.toFixed(2) }}
-                                    <span v-if="Math.abs((formTotals.find((t) => t.key === group.key)?.sum ?? 0) - 1) >= 0.001"
-                                        >(ควรเท่ากับ 1.00)</span
-                                    >
-                                </span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                                <div v-for="field in group.fields" :key="field.key">
-                                    <label class="mb-1 block text-xs text-slate-500">{{ field.label }}</label>
-                                    <input
-                                        v-model.number="form.weights[group.key][field.key]"
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        max="1"
-                                        class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                <form @submit.prevent="submitClone" class="space-y-4 p-6">
+                    <p class="text-sm text-slate-500">
+                        สร้างชุดใหม่โดยคัดลอกค่าทั้งหมดจาก "<span class="font-medium text-slate-700">{{ selectedSet?.name }}</span
+                        >" ชุดใหม่จะยังไม่ใช้งานและแก้ไขได้
+                    </p>
+                    <div>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">ชื่อชุดใหม่</label>
+                        <input
+                            v-model="cloneForm.name"
+                            type="text"
+                            required
+                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        />
+                        <p v-if="cloneForm.errors.name" class="mt-1.5 text-xs text-red-600">{{ cloneForm.errors.name }}</p>
                     </div>
-
-                    <div class="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-100 bg-white px-6 py-4">
+                    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
                         <button
                             type="button"
-                            @click="closeModal"
+                            @click="cloneOpen = false"
                             class="rounded-xl px-4 py-2 text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                         >
                             ยกเลิก
                         </button>
                         <button
                             type="submit"
-                            class="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700"
+                            :disabled="cloneForm.processing"
+                            class="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            บันทึก
+                            {{ cloneForm.processing ? 'กำลังคัดลอก...' : 'คัดลอก' }}
                         </button>
                     </div>
                 </form>
             </div>
         </div>
+
+        <ConfirmDialog
+            :open="deleteOpen"
+            title="ยืนยันการลบชุดเกณฑ์"
+            :message="`ต้องการลบ “${selectedSet?.name}” ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`"
+            confirm-label="ลบชุดเกณฑ์"
+            :processing="deleting"
+            @confirm="destroySet"
+            @cancel="deleteOpen = false"
+        />
+
+        <ConfirmDialog
+            :open="pendingSelectId !== null"
+            title="ทิ้งการแก้ไขที่ยังไม่บันทึก?"
+            message="ชุดเกณฑ์ที่เปิดอยู่มีการแก้ไขที่ยังไม่ได้บันทึก หากเปลี่ยนไปชุดอื่น การแก้ไขจะหายไป"
+            confirm-label="ทิ้งการแก้ไข"
+            @confirm="confirmDiscardAndSwitch"
+            @cancel="pendingSelectId = null"
+        />
     </AdminLayout>
 </template>

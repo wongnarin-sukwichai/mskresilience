@@ -4,7 +4,9 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\UserRole;
+use App\Enums\WorkGroup;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -24,6 +26,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'work_groups',
     ];
 
     /**
@@ -47,7 +50,22 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'role' => UserRole::class,
+            'work_groups' => AsEnumCollection::of(WorkGroup::class),
         ];
+    }
+
+    /**
+     * Whether this user may import the given กลุ่มงาน's sheet. Admin: every group, implicitly (nothing to tick).
+     * Staff: only the groups an admin granted. Member: none. Single source of truth for the future import
+     * menu's per-sheet check — don't re-derive it there.
+     */
+    public function canImport(WorkGroup $group): bool
+    {
+        return match ($this->role) {
+            UserRole::Admin => true,
+            UserRole::Staff => (bool) $this->work_groups?->contains($group),
+            UserRole::Member => false,
+        };
     }
 
     /**

@@ -45,6 +45,12 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // Controllers flash a Thai success message via back()->with('status', ...) or a refusal via
+            // back()->with('error', ...); AdminLayout shows either as a toast (green / red).
+            'flash' => [
+                'status' => fn () => $request->session()->get('status'),
+                'error' => fn () => $request->session()->get('error'),
+            ],
         ]);
     }
 }

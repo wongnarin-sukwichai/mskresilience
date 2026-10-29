@@ -21,7 +21,7 @@ export interface CommunityBoundary {
 
 export const communityBoundaries: CommunityBoundary[] = [
     {
-        id: 1, // ชุมชนตักสิลา 1
+        id: 1, // ชุมชนตักศิลา 1
         rings: [
             [
                 [16.2006248, 103.2798587],
@@ -87,7 +87,7 @@ export const communityBoundaries: CommunityBoundary[] = [
         ],
     },
     {
-        id: 2, // ชุมชนตักสิลา 2
+        id: 2, // ชุมชนตักศิลา 2
         rings: [
             [
                 [16.2048406, 103.2868765],

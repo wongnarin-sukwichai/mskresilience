@@ -1,50 +1,46 @@
 <?php
 
+use App\Http\Controllers\Admin\CommunityManagementController;
+use App\Http\Controllers\Admin\DataImportController;
+use App\Http\Controllers\Admin\ScoringCriteriaController;
 use App\Http\Controllers\Admin\UserManagementController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('dashboard', function () {
-        return Inertia::render('Dashboard');
-    })->middleware('role:admin,staff,member')->name('dashboard');
-
-    // Data import, community data, hazard analysis, and the L&D register are staff-level duties — open to
-    // admin and staff, not member.
-    Route::middleware('role:admin,staff')->group(function () {
-        Route::get('data-import', function () {
-            return Inertia::render('admin/DataImport');
-        })->name('data-import.index');
-
-        // ข้อมูลชุมชน — replaces the old admin-only "จัดการชุมชน" CRUD page (removed). Sits right after
-        // นำเข้าข้อมูล in both routing and the sidebar since it's the "view what's been imported/set up per
-        // community" counterpart to that import flow, and per product decision is no longer admin-only.
-        Route::get('community-data', function () {
-            return Inertia::render('admin/CommunityData');
-        })->name('community-data.index');
-
-        Route::get('disaster-overview', function () {
-            return Inertia::render('admin/DisasterOverview');
-        })->name('disaster-overview.index');
-
-        Route::get('hazard-analysis', function () {
-            return Inertia::render('admin/HazardAnalysis');
-        })->name('hazard-analysis.index');
-
-        Route::get('events-ld', function () {
-            return Inertia::render('admin/EventsLD');
-        })->name('events-ld.index');
+    // The 6 display pages (reset to empty placeholders 2026-10-29, rebuilt one at a time per the client's 5-page
+    // display spec + MCR2030 & KPI). Open to every role. Access is split by module instead: จัดการข้อมูล is
+    // admin+staff, ตั้งค่าระบบ is admin. 'dashboard' stays the route name and URL for เกี่ยวกับระบบ because the
+    // post-login and guest redirects target route('dashboard').
+    Route::middleware('role:admin,staff,member')->group(function () {
+        Route::get('dashboard', fn () => Inertia::render('admin/About'))->name('dashboard');
+        Route::get('risk-overview', fn () => Inertia::render('admin/RiskOverview'))->name('risk-overview.index');
+        Route::get('community-map', fn () => Inertia::render('admin/CommunityMap'))->name('community-map.index');
+        Route::get('risk-factors', fn () => Inertia::render('admin/RiskFactors'))->name('risk-factors.index');
+        Route::get('impact-recovery', fn () => Inertia::render('admin/ImpactRecovery'))->name('impact-recovery.index');
+        Route::get('mcr2030-kpi', fn () => Inertia::render('admin/Mcr2030Kpi'))->name('mcr2030-kpi.index');
     });
 
-    // Managing accounts/roles and scoring-criteria weights live under the "ตั้งค่า" (settings) submenu —
-    // admin-only. An accidental weight edit would silently reprice every historical HEVC score (same
-    // reasoning as account/role management). Community management (จัดการชุมชน) used to live here too but
-    // was removed in favor of ข้อมูลชุมชน above (admin+staff, flat nav) per product decision.
+    // จัดการข้อมูล module — admin and staff. Per-sheet (กลุ่มงาน) import permission comes from
+    // User::canImport(), checked in DataImportController; {group} is an App\Enums\WorkGroup value (404 if not).
+    Route::middleware('role:admin,staff')->group(function () {
+        Route::get('data-import', [DataImportController::class, 'index'])->name('data-import.index');
+        Route::get('data-import/{group}', [DataImportController::class, 'show'])->name('data-import.show');
+    });
+
+    // ตั้งค่าระบบ module. Managing accounts/roles, the community registry, and scoring-criteria weights are
+    // admin-only. An accidental weight edit would silently reprice every historical HEVC score (same reasoning
+    // as account/role management).
     Route::middleware('role:admin')->group(function () {
         Route::resource('users', UserManagementController::class)->except(['create', 'edit', 'show']);
 
-        Route::get('scoring-criteria', function () {
-            return Inertia::render('admin/ScoringCriteria');
-        })->name('scoring-criteria.index');
+        Route::resource('communities', CommunityManagementController::class)->except(['create', 'edit', 'show']);
+
+        Route::resource('scoring-criteria', ScoringCriteriaController::class)
+            ->except(['create', 'edit', 'show'])
+            ->parameters(['scoring-criteria' => 'set']);
+        Route::post('scoring-criteria/{set}/activate', [ScoringCriteriaController::class, 'activate'])->name('scoring-criteria.activate');
+        Route::post('scoring-criteria/{set}/lock', [ScoringCriteriaController::class, 'lock'])->name('scoring-criteria.lock');
+        Route::post('scoring-criteria/{set}/unlock', [ScoringCriteriaController::class, 'unlock'])->name('scoring-criteria.unlock');
     });
 });

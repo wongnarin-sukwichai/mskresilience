@@ -43,36 +43,33 @@ class DashboardTest extends TestCase
         $this->get('/data-import')->assertStatus(403);
     }
 
-    public function test_admin_and_staff_can_visit_community_data_but_member_cannot()
+    public function test_every_role_can_visit_the_six_display_pages()
     {
-        foreach ([UserRole::Admin, UserRole::Staff] as $role) {
-            $user = User::factory()->create(['role' => $role]);
-            $this->actingAs($user);
+        $pages = [
+            '/dashboard' => 'admin/About',
+            '/risk-overview' => 'admin/RiskOverview',
+            '/community-map' => 'admin/CommunityMap',
+            '/risk-factors' => 'admin/RiskFactors',
+            '/impact-recovery' => 'admin/ImpactRecovery',
+            '/mcr2030-kpi' => 'admin/Mcr2030Kpi',
+        ];
 
-            $this->get('/community-data')->assertStatus(200);
+        foreach ([UserRole::Admin, UserRole::Staff, UserRole::Member] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]));
+
+            foreach ($pages as $url => $component) {
+                $this->get($url)->assertStatus(200)->assertInertia(fn ($page) => $page->component($component));
+            }
         }
-
-        $member = User::factory()->create(['role' => UserRole::Member]);
-        $this->actingAs($member);
-
-        $this->get('/community-data')->assertStatus(403);
     }
 
-    public function test_admin_and_staff_can_visit_hazard_analysis_and_events_ld_but_member_cannot()
+    public function test_old_display_pages_are_gone()
     {
-        foreach ([UserRole::Admin, UserRole::Staff] as $role) {
-            $user = User::factory()->create(['role' => $role]);
-            $this->actingAs($user);
+        $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
 
-            $this->get('/hazard-analysis')->assertStatus(200);
-            $this->get('/events-ld')->assertStatus(200);
+        foreach (['/community-data', '/disaster-overview', '/hazard-analysis', '/events-ld'] as $url) {
+            $this->get($url)->assertStatus(404);
         }
-
-        $member = User::factory()->create(['role' => UserRole::Member]);
-        $this->actingAs($member);
-
-        $this->get('/hazard-analysis')->assertStatus(403);
-        $this->get('/events-ld')->assertStatus(403);
     }
 
     public function test_only_admin_can_visit_scoring_criteria()

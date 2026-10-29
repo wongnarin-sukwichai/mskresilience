@@ -213,16 +213,18 @@ function initRiskMap() {
         maxZoom: 19,
     });
 
-    colorTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // CartoDB's basemaps.cartocdn.com now requires an API key — see the same note in Welcome.vue's
+    // initMap() for details (unauthenticated tiles come back HTTP 200 but watermarked). Reuses Esri's
+    // free no-key tile services instead, same as the satellite layer above.
+    colorTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution:
+            'Tiles &copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, &copy; OpenStreetMap contributors, and the GIS User Community',
+        maxZoom: 19,
     });
 
-    grayTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    grayTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS',
+        maxZoom: 19,
     });
 
     satelliteTileLayer.addTo(map);
@@ -257,13 +259,12 @@ function initRiskMap() {
                 <span class="inline-block rounded px-2 py-1 text-[10px] font-semibold" style="background-color:${meta.color}1a;color:${meta.color}">
                     HEVC ${com.hevc} · ระดับ${meta.label}
                 </span>
-                <p class="mt-1.5 text-[10px] text-slate-400">*ขอบเขตพื้นที่เป็นการประมาณชั่วคราว รอไฟล์ shapefile จริง</p>
             </div>
         `;
 
-        // Zone fill — see data/communityZones.ts for why this is a Voronoi approximation, not a real boundary.
+        // Zone fill — real ชุมชน boundary, see data/communityZones.ts for provenance.
         const zone = zoneById.get(com.id);
-        if (zone && zone.polygon.length >= 3) {
+        if (zone && zone.polygon.length > 0) {
             const zonePolygon = L.polygon(zone.polygon, {
                 color: meta.color,
                 weight: 1.5,
@@ -353,10 +354,6 @@ onUnmounted(() => {
                     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h2 class="font-semibold text-slate-800">แผนที่ความเสี่ยง อำเภอเมืองมหาสารคาม</h2>
-                            <p class="mt-0.5 text-[11px] text-amber-600">
-                                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                                ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริงจากผู้ว่าจ้าง
-                            </p>
                         </div>
                         <div class="flex items-center gap-3">
                             <div class="flex items-center rounded-lg border border-slate-200 bg-slate-100/80 p-0.5">

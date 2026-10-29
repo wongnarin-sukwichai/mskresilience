@@ -286,11 +286,11 @@ watch([filterLevel, filterHazard, searchQuery], () => {
     currentPage.value = 1;
 });
 
-// ── ตาราง ⇄ ผังพื้นที่ toggle — the zone view reuses the same Voronoi-clipped community zones as the
-// Dashboard risk map, with the same light/gray CartoDB basemap Dashboard.vue's "ขาวดำ" style uses (a muted
-// basemap so the risk-colored zone fills stay the visual focus, same reasoning as any choropleth). Still
-// gets Leaflet's projection math and pan/zoom/popups for free — see the "Map pages" note in CLAUDE.md for
-// why the map instance is a plain module-scope variable, not a ref. ──
+// ── ตาราง ⇄ ผังพื้นที่ toggle — the zone view reuses the same real community zones (communityZones.ts)
+// as the Dashboard risk map, with the same light/gray CartoDB basemap Dashboard.vue's "ขาวดำ" style uses (a
+// muted basemap so the risk-colored zone fills stay the visual focus, same reasoning as any choropleth).
+// Still gets Leaflet's projection math and pan/zoom/popups for free — see the "Map pages" note in
+// CLAUDE.md for why the map instance is a plain module-scope variable, not a ref. ──
 const viewMode = ref<'table' | 'map'>('table');
 let zoneMap: L.Map | null = null;
 const zoneMapEl = ref<HTMLDivElement | null>(null);
@@ -300,10 +300,11 @@ function initZoneMap() {
 
     zoneMap = L.map(zoneMapEl.value, { scrollWheelZoom: false }).setView(MAP_CENTER, MAP_ZOOM);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // CartoDB's basemaps.cartocdn.com now requires an API key (see Welcome.vue's initMap() note) —
+    // Esri's free no-key light-gray basemap replaces it.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS',
+        maxZoom: 19,
     }).addTo(zoneMap);
 
     L.polygon(MUNICIPALITY_BOUNDARY, { color: '#94a3b8', weight: 2, dashArray: '6 4', fill: false, interactive: false }).addTo(zoneMap);
@@ -311,7 +312,7 @@ function initZoneMap() {
     const rowById = new Map(overviewRows.value.map((r) => [r.id, r]));
 
     communityZones.forEach((zone) => {
-        if (zone.polygon.length < 3) return;
+        if (zone.polygon.length === 0) return;
         const row = rowById.get(zone.id);
         const level = row?.overallLevel ?? 'incomplete';
         const meta = overallLevelMeta[level];
@@ -524,10 +525,7 @@ onUnmounted(destroyZoneMap);
 
                     <!-- Zone view — Leaflet with a basemap TileLayer, see the note above the viewMode ref -->
                     <div v-else class="p-4">
-                        <p class="mb-3 text-[11px] text-amber-600">
-                            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                            ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริง — สีแสดงระดับความเสี่ยงรวม
-                        </p>
+                        <p class="mb-3 text-[11px] text-slate-500">สีแสดงระดับความเสี่ยงรวม</p>
                         <div ref="zoneMapEl" class="h-[420px] w-full rounded-xl bg-slate-50"></div>
                         <div class="mt-3 flex flex-wrap gap-3">
                             <span v-for="(meta, level) in overallLevelMeta" :key="level" class="flex items-center gap-1.5 text-[11px] text-slate-500">

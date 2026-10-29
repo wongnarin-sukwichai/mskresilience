@@ -186,40 +186,49 @@ export const riskNameTH: Record<Community['activeRisk'], string> = {
 };
 
 // The 32 official ชุมชน of เทศบาลเมืองมหาสารคาม (names & count verified against data.mkm.go.th, the
-// municipality's open-data portal). Coordinates are NOT official/surveyed — the municipality does not
-// publish per-community geodata — they are approximate points scattered inside the real MUNICIPALITY_BOUNDARY
-// above, for placeholder visualization only. activeRisk values are illustrative demo data, not live risk data.
+// municipality's open-data portal). Coordinates are each community's "pole of inaccessibility" (the
+// point deepest inside its polygon, via the `polylabel` algorithm — robust for concave shapes, unlike a
+// plain centroid which can fall outside one) computed from the real per-community boundary polygons in
+// communityBoundaries.ts, so every point here is guaranteed to fall inside its own community's real
+// boundary. These used to be arbitrary placeholder points scattered inside MUNICIPALITY_BOUNDARY with no
+// relationship to any real per-community shape (there was no real shapefile yet) — that was a real bug
+// once the real shapefile replaced communityZones.ts's Voronoi approximation: every single one of the 32
+// old points fell outside its own real polygon (often inside a distant, unrelated community's polygon
+// instead), which visually showed up as a community's name badge sitting on a completely different
+// community's colored zone. Recompute these (same polylabel-from-communityBoundaries.ts approach) if
+// communityBoundaries.ts is ever regenerated from an updated shapefile. activeRisk values are illustrative
+// demo data, not live risk data.
 export const communities: Community[] = [
-    { id: 1, name: 'ชุมชนตักสิลา 1', lat: 16.1877, lng: 103.3065, activeRisk: 'fire' },
-    { id: 2, name: 'ชุมชนตักสิลา 2', lat: 16.1675, lng: 103.3019, activeRisk: 'flood' },
-    { id: 3, name: 'ชุมชนธัญญา 1', lat: 16.1733, lng: 103.2899, activeRisk: 'none' },
-    { id: 4, name: 'ชุมชนธัญญา 2', lat: 16.1746, lng: 103.2966, activeRisk: 'pm25' },
-    { id: 5, name: 'ชุมชนธัญญา 3', lat: 16.1617, lng: 103.326, activeRisk: 'none' },
-    { id: 6, name: 'ชุมชนธัญญา 4', lat: 16.1949, lng: 103.2881, activeRisk: 'wind' },
-    { id: 7, name: 'ชุมชนนาควิชัย 1', lat: 16.1876, lng: 103.2831, activeRisk: 'none' },
-    { id: 8, name: 'ชุมชนนาควิชัย 2', lat: 16.195, lng: 103.3045, activeRisk: 'heat' },
-    { id: 9, name: 'ชุมชนนาควิชัย 3', lat: 16.1718, lng: 103.3238, activeRisk: 'none' },
-    { id: 10, name: 'ชุมชนบ้านแมด', lat: 16.1827, lng: 103.3256, activeRisk: 'flood' },
-    { id: 11, name: 'ชุมชนอภิสิทธิ์ 1', lat: 16.1668, lng: 103.3317, activeRisk: 'none' },
-    { id: 12, name: 'ชุมชนอภิสิทธิ์ 2', lat: 16.2039, lng: 103.2807, activeRisk: 'pm25' },
-    { id: 13, name: 'ชุมชนอุทัยทิศ 1', lat: 16.1883, lng: 103.314, activeRisk: 'none' },
-    { id: 14, name: 'ชุมชนอุทัยทิศ 2', lat: 16.1821, lng: 103.2993, activeRisk: 'wind' },
-    { id: 15, name: 'ชุมชนอุทัยทิศ 3', lat: 16.178, lng: 103.3307, activeRisk: 'none' },
-    { id: 16, name: 'ชุมชนอุทัยทิศ 4', lat: 16.1719, lng: 103.3104, activeRisk: 'fire' },
-    { id: 17, name: 'ชุมชนโพธิ์ศรี 1', lat: 16.1972, lng: 103.2948, activeRisk: 'none' },
-    { id: 18, name: 'ชุมชนโพธิ์ศรี 2', lat: 16.1812, lng: 103.2924, activeRisk: 'flood' },
-    { id: 19, name: 'ชุมชนเครือวัลย์ 1', lat: 16.1979, lng: 103.2767, activeRisk: 'none' },
-    { id: 20, name: 'ชุมชนเครือวัลย์ 2', lat: 16.1663, lng: 103.3143, activeRisk: 'pm25' },
-    { id: 21, name: 'ชุมชนเครือวัลย์ 3', lat: 16.2055, lng: 103.2737, activeRisk: 'none' },
-    { id: 22, name: 'ชุมชนมหาชัย', lat: 16.1784, lng: 103.3189, activeRisk: 'heat' },
-    { id: 23, name: 'ชุมชนสามัคคี 1', lat: 16.1731, lng: 103.336, activeRisk: 'wind' },
-    { id: 24, name: 'ชุมชนสามัคคี 2', lat: 16.2123, lng: 103.2816, activeRisk: 'none' },
-    { id: 25, name: 'ชุมชนศรีมหาสารคาม', lat: 16.1908, lng: 103.3204, activeRisk: 'fire' },
-    { id: 26, name: 'ชุมชนศรีสวัสดิ์ 1', lat: 16.1809, lng: 103.3375, activeRisk: 'none' },
-    { id: 27, name: 'ชุมชนศรีสวัสดิ์ 2', lat: 16.1784, lng: 103.3053, activeRisk: 'flood' },
-    { id: 28, name: 'ชุมชนศรีสวัสดิ์ 3', lat: 16.2019, lng: 103.2631, activeRisk: 'none' },
-    { id: 29, name: 'ชุมชนส่องเหนือ', lat: 16.194, lng: 103.2669, activeRisk: 'wind' },
-    { id: 30, name: 'ชุมชนส่องใต้', lat: 16.1882, lng: 103.2937, activeRisk: 'flood' },
-    { id: 31, name: 'ชุมชนปัจฉิมทัศน์ 1', lat: 16.179, lng: 103.2838, activeRisk: 'pm25' },
-    { id: 32, name: 'ชุมชนปัจฉิมทัศน์ 2', lat: 16.1903, lng: 103.2726, activeRisk: 'heat' },
+    { id: 1, name: 'ชุมชนตักสิลา 1', lat: 16.198425, lng: 103.2673162, activeRisk: 'fire' },
+    { id: 2, name: 'ชุมชนตักสิลา 2', lat: 16.2076325, lng: 103.2787694, activeRisk: 'flood' },
+    { id: 3, name: 'ชุมชนธัญญา 1', lat: 16.1975287, lng: 103.2962945, activeRisk: 'none' },
+    { id: 4, name: 'ชุมชนธัญญา 2', lat: 16.1914714, lng: 103.2987311, activeRisk: 'pm25' },
+    { id: 5, name: 'ชุมชนธัญญา 3', lat: 16.1847103, lng: 103.2993712, activeRisk: 'none' },
+    { id: 6, name: 'ชุมชนธัญญา 4', lat: 16.1852903, lng: 103.2919831, activeRisk: 'wind' },
+    { id: 7, name: 'ชุมชนนาควิชัย 1', lat: 16.1821963, lng: 103.30323, activeRisk: 'none' },
+    { id: 8, name: 'ชุมชนนาควิชัย 2', lat: 16.1768765, lng: 103.304644, activeRisk: 'heat' },
+    { id: 9, name: 'ชุมชนนาควิชัย 3', lat: 16.1693022, lng: 103.3016228, activeRisk: 'none' },
+    { id: 10, name: 'ชุมชนบ้านแมด', lat: 16.1787904, lng: 103.3341106, activeRisk: 'flood' },
+    { id: 11, name: 'ชุมชนอภิสิทธิ์ 1', lat: 16.179742, lng: 103.3128245, activeRisk: 'none' },
+    { id: 12, name: 'ชุมชนอภิสิทธิ์ 2', lat: 16.1720222, lng: 103.3088399, activeRisk: 'pm25' },
+    { id: 13, name: 'ชุมชนอุทัยทิศ 1', lat: 16.1828053, lng: 103.3215728, activeRisk: 'none' },
+    { id: 14, name: 'ชุมชนอุทัยทิศ 2', lat: 16.1740614, lng: 103.3215419, activeRisk: 'wind' },
+    { id: 15, name: 'ชุมชนอุทัยทิศ 3', lat: 16.1717903, lng: 103.3149272, activeRisk: 'none' },
+    { id: 16, name: 'ชุมชนอุทัยทิศ 4', lat: 16.1628492, lng: 103.3160059, activeRisk: 'fire' },
+    { id: 17, name: 'ชุมชนโพธิ์ศรี 1', lat: 16.1854003, lng: 103.3149044, activeRisk: 'none' },
+    { id: 18, name: 'ชุมชนโพธิ์ศรี 2', lat: 16.1836948, lng: 103.3099929, activeRisk: 'flood' },
+    { id: 19, name: 'ชุมชนเครือวัลย์ 1', lat: 16.1673898, lng: 103.2914681, activeRisk: 'none' },
+    { id: 20, name: 'ชุมชนเครือวัลย์ 2', lat: 16.1725756, lng: 103.2878542, activeRisk: 'pm25' },
+    { id: 21, name: 'ชุมชนเครือวัลย์ 3', lat: 16.1667419, lng: 103.2965855, activeRisk: 'none' },
+    { id: 22, name: 'ชุมชนมหาชัย', lat: 16.1841375, lng: 103.3069201, activeRisk: 'heat' },
+    { id: 23, name: 'ชุมชนสามัคคี 1', lat: 16.1860533, lng: 103.3033786, activeRisk: 'wind' },
+    { id: 24, name: 'ชุมชนสามัคคี 2', lat: 16.1927297, lng: 103.3053037, activeRisk: 'none' },
+    { id: 25, name: 'ชุมชนศรีมหาสารคาม', lat: 16.1796271, lng: 103.2874166, activeRisk: 'fire' },
+    { id: 26, name: 'ชุมชนศรีสวัสดิ์ 1', lat: 16.1996885, lng: 103.2836925, activeRisk: 'none' },
+    { id: 27, name: 'ชุมชนศรีสวัสดิ์ 2', lat: 16.1945304, lng: 103.2725989, activeRisk: 'flood' },
+    { id: 28, name: 'ชุมชนศรีสวัสดิ์ 3', lat: 16.1907368, lng: 103.2778987, activeRisk: 'none' },
+    { id: 29, name: 'ชุมชนส่องเหนือ', lat: 16.1721728, lng: 103.3270641, activeRisk: 'wind' },
+    { id: 30, name: 'ชุมชนส่องใต้', lat: 16.1674667, lng: 103.333358, activeRisk: 'flood' },
+    { id: 31, name: 'ชุมชนปัจฉิมทัศน์ 1', lat: 16.197852, lng: 103.2906404, activeRisk: 'pm25' },
+    { id: 32, name: 'ชุมชนปัจฉิมทัศน์ 2', lat: 16.1937354, lng: 103.2883356, activeRisk: 'heat' },
 ];

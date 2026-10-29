@@ -281,9 +281,9 @@ const fieldGroups = [
 ];
 
 // ── ตาราง ⇄ ผังพื้นที่ toggle — same pattern as DisasterOverview.vue/HazardAnalysis.vue's zone view
-// (basemap TileLayer + Voronoi-clipped community zones), colored here by how many *filtered* events each
-// community has — most communities will show "ไม่มีเหตุการณ์" since the mock register only seeds a
-// handful of events, which is an honest reflection of the current (small) shared events store. ──
+// (basemap TileLayer + real community zones, communityZones.ts), colored here by how many *filtered*
+// events each community has — most communities will show "ไม่มีเหตุการณ์" since the mock register only
+// seeds a handful of events, which is an honest reflection of the current (small) shared events store. ──
 type EventDensityLevel = RiskLevel | 'none';
 const densityMeta: Record<EventDensityLevel, { label: string; color: string }> = {
     ...riskLevelMeta,
@@ -317,16 +317,17 @@ function initZoneMap() {
 
     zoneMap = L.map(zoneMapEl.value, { scrollWheelZoom: false }).setView(MAP_CENTER, MAP_ZOOM);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // CartoDB's basemaps.cartocdn.com now requires an API key (see Welcome.vue's initMap() note) —
+    // Esri's free no-key light-gray basemap replaces it.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS',
+        maxZoom: 19,
     }).addTo(zoneMap);
 
     L.polygon(MUNICIPALITY_BOUNDARY, { color: '#94a3b8', weight: 2, dashArray: '6 4', fill: false, interactive: false }).addTo(zoneMap);
 
     communityZones.forEach((zone) => {
-        if (zone.polygon.length < 3) return;
+        if (zone.polygon.length === 0) return;
         const stats = eventStatsByCommunity.value.get(zone.id) ?? { count: 0, damage: 0 };
         const meta = densityMeta[densityLevelForCount(stats.count)];
         const popupHtml = `
@@ -653,10 +654,7 @@ onUnmounted(destroyZoneMap);
             </template>
 
             <div v-else class="p-4">
-                <p class="mb-3 text-[11px] text-amber-600">
-                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                    ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริง — สีแสดงจำนวนเหตุการณ์ที่บันทึกไว้ตามตัวกรองปัจจุบัน
-                </p>
+                <p class="mb-3 text-[11px] text-slate-500">สีแสดงจำนวนเหตุการณ์ที่บันทึกไว้ตามตัวกรองปัจจุบัน</p>
                 <div ref="zoneMapEl" class="h-[420px] w-full rounded-xl bg-slate-50"></div>
                 <div class="mt-3 flex flex-wrap gap-3">
                     <span v-for="(meta, level) in densityMeta" :key="level" class="flex items-center gap-1.5 text-[11px] text-slate-500">

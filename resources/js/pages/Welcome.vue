@@ -273,16 +273,20 @@ function initMap() {
         maxZoom: 19,
     });
 
-    colorTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // CartoDB's basemaps.cartocdn.com now requires an API key — unauthenticated requests still return
+    // HTTP 200 with a real-looking PNG, but every tile is watermarked "API KEY REQUIRED" across the image,
+    // which only shows up if you actually look at the rendered tiles (not from a bare curl/status check).
+    // Esri's ArcGIS tile services (already used for the satellite layer below) have a free no-key tier
+    // that covers this too, so color/gray reuse that instead of adding a new provider/dependency.
+    colorTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution:
+            'Tiles &copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, &copy; OpenStreetMap contributors, and the GIS User Community',
+        maxZoom: 19,
     });
 
-    grayTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    grayTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS',
+        maxZoom: 19,
     });
 
     satelliteTileLayer.addTo(map);
@@ -323,13 +327,12 @@ function initMap() {
                 <h4 class="font-bold text-slate-800 text-sm mb-0.5">${com.name}</h4>
                 <p class="text-xs text-slate-500">อ.เมือง จ.มหาสารคาม</p>
                 ${badgeHtml}
-                <p class="mt-1.5 text-[10px] text-slate-400">*ขอบเขตพื้นที่เป็นการประมาณชั่วคราว รอไฟล์ shapefile จริง</p>
             </div>
         `;
 
-        // Zone fill — see data/communityZones.ts for why this is a Voronoi approximation, not a real boundary.
+        // Zone fill — real ชุมชน boundary, see data/communityZones.ts for provenance.
         const zone = zoneById.get(com.id);
-        if (zone && zone.polygon.length >= 3) {
+        if (zone && zone.polygon.length > 0) {
             const zonePolygon = L.polygon(zone.polygon, {
                 color: fillColor,
                 weight: 1.5,
@@ -586,19 +589,6 @@ onUnmounted(() => {
                 </div>
             </div>
         </aside>
-
-        <!-- Placeholder-geodata disclaimer — the community zone shading is a Voronoi approximation, not a
-             real surveyed boundary (see data/communityZones.ts); this stays visible until the real
-             shapefile replaces it, not just noted in a code comment, since it renders as filled area
-             coverage a visitor could easily mistake for real boundaries at a glance. -->
-        <div class="fixed bottom-6 left-1/2 z-[45] -translate-x-1/2">
-            <div
-                class="flex items-center gap-2 rounded-full border border-amber-200 bg-white/90 px-4 py-2 text-xs font-medium text-amber-700 shadow-lg backdrop-blur-md"
-            >
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริงจากผู้ว่าจ้าง
-            </div>
-        </div>
 
         <!-- Quick Stats Overlay -->
         <div

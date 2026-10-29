@@ -274,10 +274,11 @@ function initProfileMap() {
         keyboard: false,
     }).setView([sc.lat, sc.lng], 15);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // CartoDB's basemaps.cartocdn.com now requires an API key (see Welcome.vue's initMap() note) —
+    // Esri's free no-key light-gray basemap replaces it.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS',
+        maxZoom: 19,
     }).addTo(profileMap);
 
     profileMarker = L.marker([sc.lat, sc.lng]).addTo(profileMap);

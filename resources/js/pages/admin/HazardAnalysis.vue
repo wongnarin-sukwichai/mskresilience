@@ -270,8 +270,8 @@ const verificationBadgeClass: Record<VerificationStatus, string> = {
 };
 
 // ── ตาราง ⇄ ผังพื้นที่ toggle for ตารางรายภัย — same pattern as DisasterOverview.vue's zone view (basemap
-// TileLayer + Voronoi-clipped community zones), colored by this hazard's HEVC risk level instead of the
-// overall multi-hazard level. ──
+// TileLayer + real community zones, communityZones.ts), colored by this hazard's HEVC risk level instead
+// of the overall multi-hazard level. ──
 const tableViewMode = ref<'table' | 'map'>('table');
 let zoneMap: L.Map | null = null;
 const zoneMapEl = ref<HTMLDivElement | null>(null);
@@ -280,7 +280,7 @@ function renderZoneLayer() {
     if (!zoneMap) return;
     const rowById = new Map(bulkRows.value.map((r) => [r.id, r]));
     communityZones.forEach((zone) => {
-        if (zone.polygon.length < 3) return;
+        if (zone.polygon.length === 0) return;
         const row = rowById.get(zone.id);
         if (!row) return;
         const meta = riskLevelMeta[row.riskLevel];
@@ -301,10 +301,11 @@ function initZoneMap() {
 
     zoneMap = L.map(zoneMapEl.value, { scrollWheelZoom: false }).setView(MAP_CENTER, MAP_ZOOM);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
-        subdomains: 'abcd',
-        maxZoom: 20,
+    // CartoDB's basemaps.cartocdn.com now requires an API key (see Welcome.vue's initMap() note) —
+    // Esri's free no-key light-gray basemap replaces it.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS',
+        maxZoom: 19,
     }).addTo(zoneMap);
 
     L.polygon(MUNICIPALITY_BOUNDARY, { color: '#94a3b8', weight: 2, dashArray: '6 4', fill: false, interactive: false }).addTo(zoneMap);
@@ -602,12 +603,7 @@ onUnmounted(destroyZoneMap);
                     </template>
 
                     <div v-else class="p-4">
-                        <p class="mb-3 text-[11px] text-amber-600">
-                            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                            ขอบเขตพื้นที่ชุมชนเป็นการประมาณชั่วคราว ระหว่างรอไฟล์ shapefile จริง — สีแสดงระดับความเสี่ยงของ{{
-                                hazardShortLabel[selectedHazard]
-                            }}
-                        </p>
+                        <p class="mb-3 text-[11px] text-slate-500">สีแสดงระดับความเสี่ยงของ{{ hazardShortLabel[selectedHazard] }}</p>
                         <div ref="zoneMapEl" class="h-[420px] w-full rounded-xl bg-slate-50"></div>
                         <div class="mt-3 flex flex-wrap gap-3">
                             <span v-for="(meta, level) in riskLevelMeta" :key="level" class="flex items-center gap-1.5 text-[11px] text-slate-500">

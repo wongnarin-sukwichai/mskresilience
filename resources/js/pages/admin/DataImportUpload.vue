@@ -2,14 +2,47 @@
 import { workGroupIcons } from '@/data/workGroupIcons';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 
-// Upload shell for one กลุ่มงาน — the server only renders this page if User::canImport(group). The file is
-// picked client-side only for now: nothing is uploaded, parsed or stored yet (parsing/validation/staging and
-// the review workflow are the next steps, built sheet by sheet).
+// Import page for one กลุ่มงาน — the server only renders this page if User::canImport(group). The template
+// download is real (DataImportController::template). The file is still picked client-side only: nothing is
+// uploaded, parsed or stored yet (validation and saving are the next steps, built sheet by sheet).
 defineProps<{
     group: { value: string; label: string; sheet: string };
+    columns: string[];
+    descriptions: (string | null)[];
+    exampleRows: (string | number | null)[][];
 }>();
+
+// "ตัวอย่างข้อมูล" viewer: web-only demo rows (App\Import\ImportExamples), never part of the template.
+const DATE_COLUMNS = ['ASSESSMENT_DATE', 'EVENT_START', 'EVENT_END'];
+const exampleOpen = ref(false);
+
+function formatExampleCell(column: string, value: string | number) {
+    if (DATE_COLUMNS.includes(column) && typeof value === 'string') {
+        const [y, m, d] = value.split('-');
+        return `${d}/${m}/${y}`;
+    }
+    return value;
+}
+
+function closeExampleOnEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape') exampleOpen.value = false;
+}
+
+onMounted(() => document.addEventListener('keydown', closeExampleOnEscape));
+onUnmounted(() => document.removeEventListener('keydown', closeExampleOnEscape));
+
+const steps = [
+    { title: 'ดาวน์โหลดแบบฟอร์ม', detail: 'ไฟล์ Excel ที่มีหัวคอลัมน์ตรงตามที่ระบบต้องการ', ready: true },
+    {
+        title: 'กรอกข้อมูลในชีตแรก',
+        detail: 'เลือกรหัสชุมชน (COMMUNITY_ID) จากรายการ ดูชื่อชุมชนได้ในชีต "รายชื่อชุมชน" ชี้เมาส์ที่หัวคอลัมน์เพื่อดูคำอธิบาย ช่องที่ไม่มีข้อมูลให้เว้นว่างไว้ (ไม่ต้องใส่ 0)',
+        ready: true,
+    },
+    { title: 'อัปโหลดไฟล์', detail: 'ระบบตรวจชื่อคอลัมน์ รหัสชุมชน และค่าในแต่ละช่อง', ready: false },
+    { title: 'ตรวจผลและยืนยัน', detail: 'ดูข้อผิดพลาด/คำเตือน และชุมชนที่มีหรือขาด แล้วกดยืนยันเพื่อนำข้อมูลเข้าระบบ', ready: false },
+];
 
 const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls'];
 
@@ -72,6 +105,56 @@ function formatFileSize(bytes: number) {
             </div>
         </div>
 
+        <div class="mb-5 grid gap-5 lg:grid-cols-2">
+            <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                <h2 class="mb-4 font-semibold text-slate-800">ขั้นตอนการนำเข้า</h2>
+                <ol class="space-y-3">
+                    <li v-for="(step, i) in steps" :key="step.title" class="flex gap-3">
+                        <span
+                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                            :class="step.ready ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'"
+                        >
+                            {{ i + 1 }}
+                        </span>
+                        <div>
+                            <p class="text-sm font-medium" :class="step.ready ? 'text-slate-800' : 'text-slate-400'">
+                                {{ step.title }}
+                                <span v-if="!step.ready" class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-normal">
+                                    อยู่ระหว่างการพัฒนา
+                                </span>
+                            </p>
+                            <p class="mt-0.5 text-xs" :class="step.ready ? 'text-slate-500' : 'text-slate-400'">{{ step.detail }}</p>
+                        </div>
+                    </li>
+                </ol>
+            </div>
+
+            <div class="flex flex-col rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+                <div class="mb-1 flex items-center justify-between gap-3">
+                    <h2 class="font-semibold text-slate-800">แบบฟอร์มนำเข้าข้อมูล</h2>
+                    <button
+                        type="button"
+                        class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-600 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                        @click="exampleOpen = true"
+                    >
+                        <i class="fa-solid fa-eye"></i>ตัวอย่างข้อมูล
+                    </button>
+                </div>
+                <p class="mb-3 text-xs text-slate-500">คอลัมน์ในแบบฟอร์ม ({{ columns.length }} คอลัมน์)</p>
+                <div class="mb-4 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+                    <span v-for="col in columns" :key="col" class="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">
+                        {{ col }}
+                    </span>
+                </div>
+                <a
+                    :href="route('data-import.template', group.value)"
+                    class="mt-auto inline-flex items-center justify-center gap-2 self-start rounded-xl bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                    <i class="fa-solid fa-file-arrow-down"></i>ดาวน์โหลดแบบฟอร์ม (.xlsx)
+                </a>
+            </div>
+        </div>
+
         <div class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
             <h2 class="mb-4 font-semibold text-slate-800">อัปโหลดไฟล์</h2>
 
@@ -127,6 +210,63 @@ function formatFileSize(bytes: number) {
                 >
                     ตรวจสอบและนำเข้า
                 </button>
+            </div>
+        </div>
+
+        <!-- ตัวอย่างข้อมูล modal -->
+        <div
+            v-if="exampleOpen"
+            class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+            @click.self="exampleOpen = false"
+        >
+            <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
+                <div class="flex items-center justify-between bg-blue-600 px-6 py-4">
+                    <h3 class="text-base font-semibold text-white">ตัวอย่างข้อมูล {{ group.label }}</h3>
+                    <button
+                        type="button"
+                        class="flex h-8 w-8 items-center justify-center rounded-full text-blue-100 hover:bg-white/15 hover:text-white"
+                        @click="exampleOpen = false"
+                    >
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 px-6 pt-4 text-xs text-slate-500">
+                    <span class="rounded-md bg-amber-50 px-2 py-0.5 font-medium text-amber-700">ข้อมูลสมมติเพื่อการสาธิต</span>
+                    <span>หน้าตาเหมือนชีตแรกในแบบฟอร์ม ช่องที่ไม่มีข้อมูลให้เว้นว่างไว้ ไม่ต้องใส่ 0</span>
+                </div>
+
+                <div class="m-6 mt-3 overflow-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full border-collapse text-xs">
+                        <thead class="sticky top-0 bg-slate-50">
+                            <tr>
+                                <th
+                                    v-for="(col, i) in columns"
+                                    :key="col"
+                                    class="border-b border-r border-slate-200 px-3 py-2 text-left align-top font-normal last:border-r-0"
+                                >
+                                    <span class="block whitespace-nowrap font-mono font-semibold text-slate-700">{{ col }}</span>
+                                    <span v-if="descriptions[i]" class="mt-0.5 block min-w-36 text-[11px] text-slate-400">{{ descriptions[i] }}</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, r) in exampleRows" :key="r">
+                                <td
+                                    v-for="(col, i) in columns"
+                                    :key="col"
+                                    class="whitespace-nowrap border-b border-r border-slate-100 px-3 py-2 align-top text-slate-700 last:border-r-0"
+                                    :class="{ 'max-w-xs truncate': col === 'EVENT_DESCRIPTION' }"
+                                    :title="col === 'EVENT_DESCRIPTION' ? String(row[i] ?? '') : undefined"
+                                >
+                                    <template v-if="row[i] !== null">{{ formatExampleCell(col, row[i]!) }}</template>
+                                    <span v-else-if="col === 'COMMUNITY_NAME'" class="italic text-slate-400">(เว้นว่าง) ไม่บังคับ</span>
+                                    <span v-else class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">(เว้นว่าง) = ไม่มีข้อมูล</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </AdminLayout>

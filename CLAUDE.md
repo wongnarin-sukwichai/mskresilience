@@ -122,7 +122,21 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 
 **`นำเข้าข้อมูล`** (child of the `จัดการข้อมูล` module, `role:admin,staff`, `AppHttpControllersAdminDataImportController`). Rebuilt 2026-10-29 as a 2-step shell; the old v1 mock wizard is gone and still in git history.
 - **Step 1, `/data-import`** (`pages/admin/DataImport.vue`): pick the กลุ่มงาน from a card grid. The server sends **only the groups `User::canImport()` allows**: admin sees all 8, staff sees only the groups an admin granted. A staff user with no grants sees a "ยังไม่ได้รับสิทธิ์" empty state.
-- **Step 2, `/data-import/{group}`** (`pages/admin/DataImportUpload.vue`): `{group}` is an implicitly-bound `AppEnumsWorkGroup`, so an unknown value is a 404. An ungranted group **redirects back with a red-toast `error` flash**; it is enforced server-side, not just hidden. The page is a **shell**: the file is picked and checked for a .xlsx/.xls extension client-side only. Nothing is uploaded, parsed or stored, and the ตรวจสอบและนำเข้า button is disabled.
+- **Step 2, `/data-import/{group}`** (`pages/admin/DataImportUpload.vue`): `{group}` is an implicitly-bound `AppEnumsWorkGroup`, so an unknown value is a 404. An ungranted group **redirects back with a red-toast `error` flash**; it is enforced server-side, not just hidden. The upload part is still a **shell**: the file is picked and checked for a .xlsx/.xls extension client-side only. Nothing is uploaded, parsed or stored, and the ตรวจสอบและนำเข้า button is disabled.
+- **Template download (built 2026-11-02), `/data-import/{group}/template`:** same `canImport()` check. It is built by `App\Import\TemplateBuilder` with phpoffice/phpspreadsheet.
+  - Sheet 1 is named after the sheet. Each header has a hover comment from `App\Import\ColumnDescriptions`, generated from the client's คำอธิบาย sheet. The KPI_* columns have none, because the client left them blank. COMMUNITY_ID has a dropdown sourced from the `communities` table.
+  - **Headers only, with no sample row.** A sample row plus a `หมายเหตุ` marker column was built and then dropped by the owner on 2026-11-02 ("คิดเยอะไป"), so don't re-add it unprompted. The header row has no fill (the gridlines must stay visible) and uses bold Arial 8.
+  - Sheet 2, `รายชื่อชุมชน`, is a code→name reference list. The importer will read only sheet 1.
+- **ตัวอย่างข้อมูล viewer (2026-11-02):** a "ตัวอย่างข้อมูล" button sits right-aligned in the แบบฟอร์ม card header. It opens a modal with a horizontal, Excel-like table: headers, the first line of `ColumnDescriptions`, and 3 rows from `App\Import\ImportExamples`.
+  - It is **web-only on purpose**, so demo data can never be imported. Don't put it into the template file.
+  - The rows are the client's R001–R003, with the client's placeholder values made plausible and labelled ข้อมูลสมมติเพื่อการสาธิต.
+  - Row 2 omits COMMUNITY_NAME, and row 3 has one blank cell to show "เว้นว่าง = ไม่มีข้อมูล".
+  - Headers come from `App\Import\ImportColumns::for($group)`, the single source of truth that the upload check must reuse. They are trimmed, PM2.5 is spelled `PM25` (upload should accept both). The event sheet keeps the **staff-typed EVENT_ID**: the owner reversed "system generates it" on 2026-11-02, and upload must reject duplicates.
+  - The upload page lists the columns and shows a 4-step guide; steps 3–4 are marked อยู่ระหว่างการพัฒนา.
+- **Decided 2026-11-02:**
+  - Re-import replaces data per (COMMUNITY_ID + ASSESSMENT_DATE) in the file, not the whole date.
+  - COMMUNITY_NAME is optional: a mismatch with the code is a warning, not an error.
+  - Keep import history (who/when/file/rows); rollback comes later.
 - **Icons:** card icons live in `resources/js/data/workGroupIcons.ts`. Labels and sheet names always come from `WorkGroup::options()`.
 - **Next steps** follow the import workflow agreed 2026-10-05 (in memory), built sheet by sheet:
   - Parse into staging.

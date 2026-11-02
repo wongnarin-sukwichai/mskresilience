@@ -26,6 +26,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('role:admin,staff')->group(function () {
         Route::get('data-import', [DataImportController::class, 'index'])->name('data-import.index');
         Route::get('data-import/{group}', [DataImportController::class, 'show'])->name('data-import.show');
+        Route::get('data-import/{group}/template', [DataImportController::class, 'template'])->name('data-import.template');
     });
 
     // ตั้งค่าระบบ module. Managing accounts/roles, the community registry, and scoring-criteria weights are

@@ -57,7 +57,7 @@ CI (`.github/workflows/`) runs `vendor/bin/pint`, `npm run format`, `npm run lin
 
 `AdminLayout.vue`'s `navItems` hides entries the current user can't reach, rather than showing a dead link that 403s. `routes/admin.php`'s `role:` middleware is the actual enforcement, so keep both in sync. Within the import module, *which sheets* a staff user may import is a separate per-user grant (see กลุ่มงาน below).
 
-**Backend rebuild (from 2026-10-29)**: after the project owner's talk with the client, the real backend is being built **one menu at a time, owner-led, using only settled data** — don't jump ahead to other menus or convert mock pages to the DB unprompted. `communities` is the first real domain table; everything else is still mock.
+**Backend rebuild (from 2026-10-29)**: after the project owner's talk with the client, the real backend is being built **one menu at a time, owner-led, using only settled data** — don't jump ahead to other menus or convert mock pages to the DB unprompted. The real domain tables so far are `communities`, `scoring_criteria_sets`, `welfare_records` and `import_batches` (2026-11-02). The display pages are still placeholders.
 
 **`จัดการชุมชน`** (`/communities`, `role:admin`, child of `ตั้งค่าระบบ`): `App\Http\Controllers\Admin\CommunityManagementController` + `CommunityRequest` + `resources/js/pages/admin/Communities.vue`, model `App\Models\Community`, table `communities` (`code` unique, `name` unique). Fields are deliberately just **code + name** (product decision). `code` is the client's own `COMMUNITY_ID` (`R001`–`R032`, validated `^R\d{3}$`) from `data_input_mcr2030_v4.xlsx` — it is the join key for future imports, and its numbering is **not** the same order as `mahasarakham.ts`'s local `id` (e.g. ตักศิลา 1 = `R031` but local id 1). `name` is stored **without** the "ชุมชน" prefix, exactly as in the client file (the request strips a typed prefix; the UI prepends it for display). Official spelling is **ตักศิลา** (not ตักสิลา). The page shows names **without** the prefix everywhere (product decision — don't re-add "ชุมชน" in display). Layout (product decision): 3 side-by-side tables × 15 rows per page (45/page, so all 32 fit on one page; pagination only appears past 45), columns รหัส/ชื่อชุมชน/ขอบเขตแผนที่ only; clicking a row opens the edit modal, which is also where delete lives (no per-row action column). **`code` is immutable after creation** (product decision, to prevent mistakes on the import join key): the edit modal shows it as a gray read-only box, and `CommunityRequest` only validates/returns `code` on store, so update ignores any submitted code — a wrong code is fixed by deleting and re-adding. The create/edit modal's header bar is solid `bg-blue-600` with white text. That is the exact class of AdminLayout's active/focused menu item, which is the color the owner asked for. Don't confuse it with the sidebar background `bg-slate-900`: that was tried once by mistake and rejected. Delete goes through `components/admin/ConfirmDialog.vue`, a styled confirm dialog stacked above the modal, not `window.confirm()`. Reuse it for any other admin delete confirmation (`Users.vue` still uses plain `confirm()`). The create modal has a collapsible "ขั้นตอนการเพิ่มชุมชน" `<details>` listing the 3-step add-boundary process. Seeded by `CommunitySeeder` (idempotent, called from `DatabaseSeeder`). **Map boundaries/coordinates are not in the DB** (option chosen 2026-10-29): they stay in `communityBoundaries.ts`/`mahasarakham.ts`, which now carry a `code` per community so `Communities.vue` can show a read-only "ขอบเขตแผนที่ มี/ไม่มี" column. A community added through this page has no map polygon until a developer adds it to those two files (and the public/dashboard maps still read the `.ts` list, not the DB). Delete is unrestricted for now because nothing references `communities` yet — once assessment/event tables exist, add a restricting FK/guard.
 
@@ -122,7 +122,35 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 
 **`นำเข้าข้อมูล`** (child of the `จัดการข้อมูล` module, `role:admin,staff`, `AppHttpControllersAdminDataImportController`). Rebuilt 2026-10-29 as a 2-step shell; the old v1 mock wizard is gone and still in git history.
 - **Step 1, `/data-import`** (`pages/admin/DataImport.vue`): pick the กลุ่มงาน from a card grid. The server sends **only the groups `User::canImport()` allows**: admin sees all 8, staff sees only the groups an admin granted. A staff user with no grants sees a "ยังไม่ได้รับสิทธิ์" empty state.
-- **Step 2, `/data-import/{group}`** (`pages/admin/DataImportUpload.vue`): `{group}` is an implicitly-bound `AppEnumsWorkGroup`, so an unknown value is a 404. An ungranted group **redirects back with a red-toast `error` flash**; it is enforced server-side, not just hidden. The upload part is still a **shell**: the file is picked and checked for a .xlsx/.xls extension client-side only. Nothing is uploaded, parsed or stored, and the ตรวจสอบและนำเข้า button is disabled.
+- **Step 2, `/data-import/{group}`** (`pages/admin/DataImportUpload.vue`): `{group}` is an implicitly-bound `AppEnumsWorkGroup`, so an unknown value is a 404. An ungranted group **redirects back with a red-toast `error` flash**; it is enforced server-side, not just hidden.
+- **Upload → validate → confirm (built 2026-11-02, งานสวัสดิการสังคม only so far).** `App\Import\ImportSheets::for($group)` returns the group's `Sheets\ImportSheet`, or `null` if it isn't importable yet. A `null` group shows "อยู่ระหว่างการพัฒนา", and its POSTs are refused with a red toast. **Add the next sheet** by writing an `ImportSheet` (`rules()`, `keyColumns()`, `countExisting()`, `save()`), its table and model, and one line in `ImportSheets`. The generic checks all live in `ImportValidator`, so don't re-implement them per sheet.
+  - `POST /data-import/{group}/validate` stores the file in private `imports/tmp` and runs `ImportValidator`, which saves nothing. It keeps `import.pending.{group}` (token/path/filename) and `import.preview.{group}` (the result) in the session, then redirects to show, which passes `preview`.
+  - `POST …/confirm` (token) **re-validates the same file**, saves inside a transaction via `ImportSheet::save()`, moves the file to `imports/Y/m/d/`, and writes an `import_batches` row (history: user, file, rows, replaced, communities). `DELETE …/pending` cancels.
+  - **ImportValidator rules:**
+    - It reads sheet 1 only and matches headers by name (trimmed, PM2.5→PM25).
+    - A missing column is an error, except COMMUNITY_NAME, which may be absent. An extra column is a warning.
+    - Blank, "-" or "n/a" becomes null and is counted and warned about. A blank date or community is an error.
+    - Dates can be Excel serials, d/m/Y or Y-m-d. A year above 2400 is an error ("looks like พ.ศ."), not auto-converted.
+    - `COUNT` is a whole number ≥0, and `SCORE` is 0–5. There are no cross-sheet checks yet (owner agreed).
+    - A duplicate key in the file is an error. A COMMUNITY_NAME mismatch is a warning.
+    - The summary has included/missing communities and replaceCount.
+  - **Data:** `welfare_records` holds one row per (community_id, assessment_date), unique, with nullable values (null = ไม่มีข้อมูล). Its FK to `communities` is `restrictOnDelete`, and `CommunityManagementController::destroy` refuses with a toast while welfare data exists. Extend that guard for each new data table.
+  - **UI: step-by-step check list (owner decision 2026-11-02).** `ImportValidator::checks()` returns one line per **real** check: read file, headers, each column, duplicates, and compare with DB (which shows replace count, or skipped if there are errors). The page reveals the lines one at a time, each with a spinner, then its ✓/⚠/✗ result.
+    - Total time is about **12 s** (`TOTAL_REVEAL_MS`, minimum 300 ms per line). The owner wanted 10–15 s so it reads as thorough and makes staff careful.
+    - There is **no skip button** (the owner removed it).
+    - If the result is `fatal` (unreadable file, header errors, no data), the short list shows at 800 ms per line.
+    - **Never add a line that isn't backed by a real check.**
+    - **Layout for big sheets:** while running, the lines sit in a fixed-height box (`max-h-72`) that scrolls to follow the latest line. Once done, the list collapses to "ตรวจสอบครบ N รายการ" with counts and only the non-✓ lines. "แสดงทั้งหมด" opens the full list as a 2–3 column grid.
+    - **Parsed-data table:** a `max-h-[400px]` box that scrolls both ways. The header row and the แถว + COMMUNITY_ID columns are sticky (COMMUNITY_ID is moved first for this). A "เฉพาะแถวที่มีปัญหา / ทั้งหมด" toggle defaults to problems when there are any. Sticky cells need opaque backgrounds, so `cellClass()` gives every cell one.
+    - After the last line come summary tiles, the error/warning lists, the parsed table with cell highlights, and the history table (last 10).
+  - **Confirm dialog:**
+    - A recap: file, rows, communities and assessment dates.
+    - An amber replace warning, listing which earlier imports (date and user, from `ImportSheet::existing()`) will be overwritten.
+    - A required "ฉันตรวจสอบข้อมูลแล้วว่าถูกต้อง" checkbox that gates the button.
+    - A note that the importer's name is recorded.
+  - **After confirming:** the dialog switches to "กำลังนำเข้าข้อมูล" and shows the 4 real save steps one at a time, about **6 s** total (`SAVE_TOTAL_MS`, the owner asked for 5–7 s). A step turns ✓ only after the server has answered with success, otherwise it waits. Then it closes onto a **success card**: big ✓, rows, communities, replaced, file, time, user, เลขอ้างอิง #id, and a นำเข้าไฟล์ใหม่ button.
+    - `confirm()` flashes `importedBatchId`, not a `status` toast, which would pop up before the animation ends. `show()` turns that into the `lastImport` prop.
+    - On failure, the dialog closes and the red `error` toast shows.
 - **Template download (built 2026-11-02), `/data-import/{group}/template`:** same `canImport()` check. It is built by `App\Import\TemplateBuilder` with phpoffice/phpspreadsheet.
   - Sheet 1 is named after the sheet. Each header has a hover comment from `App\Import\ColumnDescriptions`, generated from the client's คำอธิบาย sheet. The KPI_* columns have none, because the client left them blank. COMMUNITY_ID has a dropdown sourced from the `communities` table.
   - **Headers only, with no sample row.** A sample row plus a `หมายเหตุ` marker column was built and then dropped by the owner on 2026-11-02 ("คิดเยอะไป"), so don't re-add it unprompted. The header row has no fill (the gridlines must stay visible) and uses bold Arial 8.
@@ -131,20 +159,17 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
   - It is **web-only on purpose**, so demo data can never be imported. Don't put it into the template file.
   - The rows are the client's R001–R003, with the client's placeholder values made plausible and labelled ข้อมูลสมมติเพื่อการสาธิต.
   - Row 2 omits COMMUNITY_NAME, and row 3 has one blank cell to show "เว้นว่าง = ไม่มีข้อมูล".
-  - Headers come from `App\Import\ImportColumns::for($group)`, the single source of truth that the upload check must reuse. They are trimmed, PM2.5 is spelled `PM25` (upload should accept both). The event sheet keeps the **staff-typed EVENT_ID**: the owner reversed "system generates it" on 2026-11-02, and upload must reject duplicates.
-  - The upload page lists the columns and shows a 4-step guide; steps 3–4 are marked อยู่ระหว่างการพัฒนา.
+- **Columns:** headers come from `App\Import\ImportColumns::for($group)`, the single source of truth (each `ImportSheet::rules()` must have exactly these keys, and a test enforces it). They are trimmed, and PM2.5 is spelled `PM25` (upload accepts both). The event sheet keeps the **staff-typed EVENT_ID**: the owner reversed "system generates it" on 2026-11-02. When the event importer is built, apply these rules:
+  - The format is `^EV\d{4}$`.
+  - A duplicate within the file is an error.
+  - An EVENT_ID already in the DB means replace, with a clear warning.
+  - If that existing event's COMMUNITY_ID or EVENT_START differs, it's an error.
 - **Decided 2026-11-02:**
   - Re-import replaces data per (COMMUNITY_ID + ASSESSMENT_DATE) in the file, not the whole date.
   - COMMUNITY_NAME is optional: a mismatch with the code is a warning, not an error.
   - Keep import history (who/when/file/rows); rollback comes later.
 - **Icons:** card icons live in `resources/js/data/workGroupIcons.ts`. Labels and sheet names always come from `WorkGroup::options()`.
-- **Next steps** follow the import workflow agreed 2026-10-05 (in memory), built sheet by sheet:
-  - Parse into staging.
-  - Validate columns, ranges, R001–R032 and all 32 communities.
-  - Statuses รอตรวจสอบ / โปรดแก้ไข / ยืนยันแล้ว.
-  - Revisions per batch.
-  - Admin confirms a whole batch.
-  - Keep original files in private storage.
+- **Next:** the remaining 7 sheets, one at a time. The 2026-10-05 plan (staging, รอตรวจสอบ/โปรดแก้ไข statuses, admin confirms batches) is **superseded**: there is no admin review. Not decided yet: the dashboard's "latest per community" rule, and rollback.
 
 `AdminLayout`'s `isActive()` also matches sub-paths, so นำเข้าข้อมูล stays highlighted (and its module open) on `/data-import/{group}`.
 

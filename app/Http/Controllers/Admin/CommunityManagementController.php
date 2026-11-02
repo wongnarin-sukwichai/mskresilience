@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CommunityRequest;
 use App\Models\Community;
+use App\Models\WelfareRecord;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -47,6 +48,11 @@ class CommunityManagementController extends Controller
      */
     public function destroy(Community $community): RedirectResponse
     {
+        // Imported data references communities (FK restrict). Refuse with a toast instead of an SQL error.
+        if (WelfareRecord::where('community_id', $community->id)->exists()) {
+            return back()->with('error', "ลบชุมชน {$community->name} ไม่ได้ เพราะมีข้อมูลที่นำเข้าแล้วอ้างอิงอยู่");
+        }
+
         $community->delete();
 
         return back()->with('status', 'ลบชุมชนเรียบร้อยแล้ว');

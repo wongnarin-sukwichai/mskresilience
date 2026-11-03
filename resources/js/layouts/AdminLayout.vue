@@ -70,6 +70,8 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
                   { label: 'จัดการชุมชน', icon: 'fa-solid fa-map-location-dot', href: route('communities.index') },
                   { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
                   { label: 'จัดการประวัตินำเข้า', icon: 'fa-solid fa-list-check', href: route('import-batches.index') },
+                  // ⚠️ TEMPORARY mock page (see routes/admin.php calc-preview). Delete with it.
+                  { label: 'ตรวจสอบการคำนวณ (ตัวอย่าง)', icon: 'fa-solid fa-calculator', href: route('calc-preview') },
               ],
           }
         : { label: 'ตั้งค่าระบบ', icon: 'fa-solid fa-gear' },

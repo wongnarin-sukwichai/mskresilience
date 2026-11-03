@@ -47,6 +47,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::resource('communities', CommunityManagementController::class)->except(['create', 'edit', 'show']);
 
+        // ⚠️ TEMPORARY mock page (2026-11-03) so the owner can picture a "ตรวจสอบการคำนวณ" menu. Delete together with
+        // pages/admin/CalcPreview.vue and its AdminLayout nav entry.
+        Route::get('calc-preview', fn () => Inertia::render('admin/CalcPreview'))->name('calc-preview');
+
         // จัดการประวัตินำเข้า: every import, searchable. Cancelling posts to import-history.cancel.
         Route::get('import-batches', [ImportBatchManagementController::class, 'index'])->name('import-batches.index');
         Route::post('import-batches/delete-files', [ImportBatchManagementController::class, 'deleteFiles'])->name('import-batches.delete-files');

@@ -230,6 +230,14 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 
 staff/member don't see this menu at all (unlike the roadmap placeholders, which everyone sees grayed-out) — a future "which year's criteria to view" selector for them belongs as a read-only filter on the dashboard/reports, not a sidebar menu entry, per the earlier design discussion.
 
+**Calculation rules that already exist in the client's docs** (found 2026-11-03; read these before inventing any):
+- `MSK-Resilience_ข้อกำหนดการออกแบบการแสดงผล_5หน้า_v5.docx` **ภาคผนวก B** gives the raw→0–5 band of every input. For example, E% is `0/>0–20/…/>80–100`, V group % is `0/>0–<5/5–<10/10–<20/20–<30/≥30`, and V_INFRA is count ÷ 10 × 100. C4_1, C4_2, C5_3, C6_3 and C8_1–C8_3 are covered too.
+- **§1.3** gives the risk bands: 0–24 ต่ำ (green), 25–49 ปานกลาง (yellow), 50–74 ค่อนข้างสูง (orange), 75–100 สูง (red).
+- §5.9 gives the KPI % formulas.
+- Appendix B disagrees with the import rules for C5_3 and C8_3 (counts there, SCORE 0–5 in the importer) and is ambiguous for C6_3. This is still open with the owner.
+
+**A "ตรวจสอบการคำนวณ" (calc-trace) menu is deferred** until after the 6 display pages (owner, 2026-11-03). When it's built, it must render a trace produced by the real calc engine, not a separate formula description. The TEMPORARY mock `/calc-preview` (`pages/admin/CalcPreview.vue` + 1 route + 1 nav entry, all marked ⚠️) is only a picture. Its bands are invented, so don't build on it.
+
 **HEVC data model, LEGACY (original xlsx template, superseded).** The bullets below describe the **first** workbook the owner supplied, and the mock pages built from it are deleted. The current source of truth is the v4 file set in `public/file/271069/`:
 - `data_input_mcr2030_v4.xlsx`: 8 input sheets, which are the 8 กลุ่มงาน.
 - `สมการการคำนวณ_hevc_v4.docx`: `h_HEVC = 20·(0.3846E + 0.6154V)·(1 − 0.16·C_HEVC)`.

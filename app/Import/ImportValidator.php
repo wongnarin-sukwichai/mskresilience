@@ -25,6 +25,9 @@ class ImportValidator
 {
     private const BLANK_MARKERS = ['', '-', 'n/a'];
 
+    /** Internal hazard keys (PM2.5 is PM25, as everywhere else in the code). */
+    private const HAZARDS = ['FLOOD', 'FIRE', 'STORM', 'HEAT', 'PM25'];
+
     /** @var array<string, Community> code → community */
     private array $communities;
 
@@ -129,7 +132,7 @@ class ImportValidator
                 $value = $raw[$name] ?? null;
                 $col = &$columns[$columnIndex[$name]];
                 if ($value === null) {
-                    if (in_array($rule, [ImportSheet::DATE, ImportSheet::COMMUNITY], true)) {
+                    if (in_array($rule, ImportSheet::REQUIRED, true)) {
                         $this->error($rowNumber, $name, "ต้องกรอก {$name}");
                         $col['errors']++;
                         $rowOk = false;
@@ -182,12 +185,16 @@ class ImportValidator
             $this->warning(null, null, "มีช่องว่าง {$blanks} ช่อง ระบบจะบันทึกเป็น \"ไม่มีข้อมูล\" (ไม่ใช่ 0)");
         }
 
-        // Cross-sheet checks (e.g. KPI vs its group) only make sense on a file without errors. They only warn.
+        // Cross checks (e.g. KPI vs its group, EVENT_ID vs events in the system) only make sense on a file
+        // without errors. KPI only warns; an event clash is an error, which also empties saveRows below.
         if ($rows && ! $this->errors) {
             $this->crossChecks = $this->sheet->crossChecks($rows);
             foreach ($this->crossChecks as $cross) {
                 foreach ($cross['warnings'] as $w) {
                     $this->warning($w['row'], $w['column'], $w['message']);
+                }
+                foreach ($cross['errors'] ?? [] as $e) {
+                    $this->error($e['row'], $e['column'], $e['message']);
                 }
             }
         }
@@ -308,7 +315,49 @@ class ImportValidator
             ImportSheet::TEXT => mb_strlen($text = trim((string) $value)) > 255
                 ? [null, 'ข้อความยาวเกิน 255 ตัวอักษร']
                 : [$text, null],
+            ImportSheet::LONG_TEXT => mb_strlen($text = trim((string) $value)) > 2000
+                ? [null, 'ข้อความยาวเกิน 2,000 ตัวอักษร']
+                : [$text, null],
+            ImportSheet::OPTIONAL_DATE => self::parseDate($value),
+            ImportSheet::EVENT_ID => preg_match('/^EV\d{4}$/', $code = strtoupper(trim((string) $value)))
+                ? [$code, null]
+                : [null, "\"{$value}\" ไม่ใช่รหัสเหตุการณ์ ต้องเป็น EV ตามด้วยตัวเลข 4 หลัก เช่น EV0001"],
+            ImportSheet::HAZARD => ($key = self::hazardKey($value))
+                ? [$key, null]
+                : [null, "\"{$value}\" ไม่ใช่ภัยที่ระบบรู้จัก (FLOOD, FIRE, STORM, HEAT, PM2.5)"],
+            ImportSheet::HAZARD_LIST => $this->parseHazardList($value),
+            ImportSheet::YES_NO => match (mb_strtolower(trim((string) $value))) {
+                'ใช่', 'y', 'yes', 'true', '1' => [true, null],
+                'ไม่ใช่', 'n', 'no', 'false', '0' => [false, null],
+                default => [null, "\"{$value}\" ต้องเป็น ใช่ หรือ ไม่ใช่"],
+            },
         };
+    }
+
+    /**
+     * A hazard as typed (any case, PM2.5 or PM25) → its internal key, or null.
+     */
+    private static function hazardKey(mixed $value): ?string
+    {
+        $key = str_replace('PM2.5', 'PM25', strtoupper(trim((string) $value)));
+
+        return in_array($key, self::HAZARDS, true) ? $key : null;
+    }
+
+    /**
+     * @return array{0: string|null, 1: string|null} keys joined by ",", without repeats
+     */
+    private function parseHazardList(mixed $value): array
+    {
+        $keys = [];
+        foreach (preg_split('/[\s,;\/]+/u', trim((string) $value), -1, PREG_SPLIT_NO_EMPTY) as $part) {
+            if (! $key = self::hazardKey($part)) {
+                return [null, "\"{$part}\" ไม่ใช่ภัยที่ระบบรู้จัก (FLOOD, FIRE, STORM, HEAT, PM2.5) คั่นหลายภัยด้วยเครื่องหมายจุลภาค"];
+            }
+            $keys[$key] = true;
+        }
+
+        return [implode(',', array_keys($keys)), null];
     }
 
     /**

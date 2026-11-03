@@ -6,6 +6,7 @@ use App\Enums\WorkGroup;
 use App\Import\Sheets\DisasterSheet;
 use App\Import\Sheets\EducationSheet;
 use App\Import\Sheets\EngineeringSheet;
+use App\Import\Sheets\EventSheet;
 use App\Import\Sheets\HealthSheet;
 use App\Import\Sheets\ImportSheet;
 use App\Import\Sheets\KpiSheet;
@@ -21,6 +22,7 @@ class ImportSheets
     public static function for(WorkGroup $group): ?ImportSheet
     {
         return match ($group) {
+            WorkGroup::DisasterEvent => new EventSheet,
             WorkGroup::Disaster => new DisasterSheet,
             WorkGroup::Welfare => new WelfareSheet,
             WorkGroup::Health => new HealthSheet,

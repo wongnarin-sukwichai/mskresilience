@@ -230,12 +230,14 @@ class DataImportUploadTest extends TestCase
             ->assertSessionHas('error');
     }
 
-    public function test_groups_without_an_importer_refuse_uploads()
+    public function test_every_group_has_an_importer_matching_its_template()
     {
-        $admin = User::factory()->create(['role' => UserRole::Admin]);
-
-        $this->actingAs($admin)->post('/data-import/disaster_event/validate', ['file' => $this->xlsx([])])
-            ->assertSessionHas('error', 'ยังไม่รองรับการนำเข้าข้อมูลงานป้องกันภัยเหตุการณ์');
+        // All 8 since 2026-11-03. A group returning null would show "อยู่ระหว่างการพัฒนา" and refuse uploads.
+        foreach (WorkGroup::cases() as $group) {
+            $sheet = ImportSheets::for($group);
+            $this->assertNotNull($sheet, $group->value);
+            $this->assertSame(ImportColumns::for($group), array_keys($sheet->rules()), $group->value);
+        }
     }
 
     /**

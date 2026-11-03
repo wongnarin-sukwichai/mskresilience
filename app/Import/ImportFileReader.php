@@ -69,7 +69,7 @@ class ImportFileReader
                 continue;
             }
             foreach ($names as $pos => $name) {
-                if (($rules[$name] ?? null) === ImportSheet::DATE && is_numeric($cells[$pos])) {
+                if (in_array($rules[$name] ?? null, [ImportSheet::DATE, ImportSheet::OPTIONAL_DATE], true) && is_numeric($cells[$pos])) {
                     $cells[$pos] = Date::excelToDateTimeObject((float) $cells[$pos])->format('Y-m-d');
                 }
             }
@@ -110,7 +110,7 @@ class ImportFileReader
 
             return match ($rules[$column]) {
                 ImportSheet::DATE => ImportValidator::parseDate($value)[0],
-                ImportSheet::COMMUNITY => strtoupper(trim((string) $value)),
+                ImportSheet::COMMUNITY, ImportSheet::EVENT_ID => strtoupper(trim((string) $value)),
                 default => trim((string) $value),
             };
         }, $sheet->keyColumns()));

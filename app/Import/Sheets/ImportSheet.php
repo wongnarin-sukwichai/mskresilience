@@ -32,6 +32,27 @@ interface ImportSheet
     /** Free text, trimmed, at most 255 characters. */
     public const TEXT = 'text';
 
+    /** Free text, trimmed, at most 2000 characters (e.g. EVENT_DESCRIPTION). */
+    public const LONG_TEXT = 'long_text';
+
+    /** A date that may be left blank (e.g. EVENT_END of an event still going on). */
+    public const OPTIONAL_DATE = 'optional_date';
+
+    /** Staff-typed event code: EV + 4 digits (owner decision 2026-11-02). Required. */
+    public const EVENT_ID = 'event_id';
+
+    /** One hazard: FLOOD, FIRE, STORM, HEAT or PM2.5 (stored as the internal key, PM25). Required. */
+    public const HAZARD = 'hazard';
+
+    /** Zero or more hazards, separated by commas or spaces. Stored as keys joined by ",". */
+    public const HAZARD_LIST = 'hazard_list';
+
+    /** ใช่ / ไม่ใช่ (also Y/N, Yes/No, TRUE/FALSE, 1/0). Stored as a boolean. */
+    public const YES_NO = 'yes_no';
+
+    /** Rules where a blank cell is an error rather than ไม่มีข้อมูล. */
+    public const REQUIRED = [self::DATE, self::COMMUNITY, self::EVENT_ID, self::HAZARD];
+
     /**
      * Rule per header. The keys must be exactly ImportColumns::for() of this group, in the same order.
      *
@@ -54,12 +75,13 @@ interface ImportSheet
     public function referencesCommunity(int $communityId): bool;
 
     /**
-     * Checks against other sheets' data, run by ImportValidator only when the file has no errors. Each one becomes
-     * a line in the step-by-step list, and its warnings join the file's warnings. They never block the import
-     * (e.g. KPI above its group, owner decision 2026-11-03).
+     * Checks across rows or against data already in the system, run by ImportValidator only when the file has no
+     * other errors. Each one becomes a line in the step-by-step list, and its warnings/errors join the file's.
+     * Warnings never block (e.g. KPI above its group, owner decision 2026-11-03); errors do (e.g. an EVENT_ID
+     * already used by another community).
      *
      * @param  list<array{row: int, values: array<string, mixed>}>  $rows  validated rows (COMMUNITY_ID is the code)
-     * @return list<array{label: string, status: 'ok'|'warning', detail: string, warnings: list<array{row: int, column: string, message: string}>}>
+     * @return list<array{label: string, status: 'ok'|'warning'|'error', detail: string, warnings: list<array{row: int, column: string|null, message: string}>, errors?: list<array{row: int, column: string|null, message: string}>}>
      */
     public function crossChecks(array $rows): array;
 

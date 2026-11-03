@@ -3,8 +3,11 @@
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// `openLogin` is flashed by GET /login (AuthenticatedSessionController::create), which has no page of its own.
 Route::get('/', function () {
-    return Inertia::render('Welcome');
+    return Inertia::render('Welcome', [
+        'openLogin' => (bool) session('openLogin'),
+    ]);
 })->name('home');
 
 require __DIR__.'/admin.php';

@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\CommunityManagementController;
 use App\Http\Controllers\Admin\DataImportController;
+use App\Http\Controllers\Admin\ImportBatchManagementController;
+use App\Http\Controllers\Admin\ImportHistoryController;
 use App\Http\Controllers\Admin\ScoringCriteriaController;
 use App\Http\Controllers\Admin\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -30,6 +32,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('data-import/{group}/validate', [DataImportController::class, 'validateFile'])->name('data-import.validate');
         Route::post('data-import/{group}/confirm', [DataImportController::class, 'confirm'])->name('data-import.confirm');
         Route::delete('data-import/{group}/pending', [DataImportController::class, 'cancel'])->name('data-import.cancel');
+
+        // ประวัตินำเข้า: the imports of the groups this user may import. Cancel rules are in App\Import\ImportHistory.
+        Route::get('import-history', [ImportHistoryController::class, 'index'])->name('import-history.index');
+        Route::get('import-history/{batch}/data', [ImportHistoryController::class, 'data'])->name('import-history.data');
+        Route::delete('import-history/{batch}', [ImportHistoryController::class, 'cancel'])->name('import-history.cancel');
     });
 
     // ตั้งค่าระบบ module. Managing accounts/roles, the community registry, and scoring-criteria weights are
@@ -39,6 +46,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('users', UserManagementController::class)->except(['create', 'edit', 'show']);
 
         Route::resource('communities', CommunityManagementController::class)->except(['create', 'edit', 'show']);
+
+        // จัดการประวัตินำเข้า: every import, searchable. Cancelling posts to import-history.cancel.
+        Route::get('import-batches', [ImportBatchManagementController::class, 'index'])->name('import-batches.index');
+        Route::post('import-batches/delete-files', [ImportBatchManagementController::class, 'deleteFiles'])->name('import-batches.delete-files');
 
         Route::resource('scoring-criteria', ScoringCriteriaController::class)
             ->except(['create', 'edit', 'show'])

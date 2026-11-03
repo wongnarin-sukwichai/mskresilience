@@ -42,6 +42,9 @@ class ImportValidator
 
     private int $duplicateCount = 0;
 
+    /** @var list<array{label: string, status: string, detail: string, warnings: list<array<string, mixed>>}> from ImportSheet::crossChecks() */
+    private array $crossChecks = [];
+
     public function __construct(private ImportSheet $sheet)
     {
         $this->communities = Community::orderBy('code')->get()->keyBy('code')->all();
@@ -179,6 +182,16 @@ class ImportValidator
             $this->warning(null, null, "มีช่องว่าง {$blanks} ช่อง ระบบจะบันทึกเป็น \"ไม่มีข้อมูล\" (ไม่ใช่ 0)");
         }
 
+        // Cross-sheet checks (e.g. KPI vs its group) only make sense on a file without errors. They only warn.
+        if ($rows && ! $this->errors) {
+            $this->crossChecks = $this->sheet->crossChecks($rows);
+            foreach ($this->crossChecks as $cross) {
+                foreach ($cross['warnings'] as $w) {
+                    $this->warning($w['row'], $w['column'], $w['message']);
+                }
+            }
+        }
+
         return $this->result($rows, $extra, $this->errors ? [] : $saveRows);
     }
 
@@ -266,6 +279,10 @@ class ImportValidator
             ? $check("ตรวจข้อมูลซ้ำ ({$keyLabel})", 'error', "ซ้ำ {$this->duplicateCount} แถว")
             : $check("ตรวจข้อมูลซ้ำ ({$keyLabel})", 'ok', 'ไม่พบข้อมูลซ้ำ');
 
+        foreach ($this->crossChecks as $cross) {
+            $checks[] = $check($cross['label'], $cross['status'], $cross['detail']);
+        }
+
         $checks[] = match (true) {
             (bool) $this->errors => $check('เทียบกับข้อมูลในระบบ', 'skipped', 'ข้าม เพราะไฟล์ยังมีข้อผิดพลาด'),
             $existing['count'] > 0 => $check('เทียบกับข้อมูลในระบบ', 'warning', "จะแทนที่ข้อมูลเดิม {$existing['count']} แถว"),
@@ -286,13 +303,43 @@ class ImportValidator
             ImportSheet::COMMUNITY_NAME => [trim((string) $value), null],
             ImportSheet::COUNT => $this->parseWhole($value, 0, null, 'ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป'),
             ImportSheet::SCORE => $this->parseWhole($value, 0, 5, 'ต้องเป็นจำนวนเต็ม 0–5'),
+            ImportSheet::DECIMAL => $this->parseDecimal($value, null, 'ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป'),
+            ImportSheet::PERCENT => $this->parseDecimal($value, 100, 'ต้องเป็นตัวเลข 0–100 (ร้อยละ)'),
+            ImportSheet::TEXT => mb_strlen($text = trim((string) $value)) > 255
+                ? [null, 'ข้อความยาวเกิน 255 ตัวอักษร']
+                : [$text, null],
         };
     }
 
     /**
+     * A number ≥ 0 (and ≤ $max) with at most 2 decimal places. A float like 0.1 + 0.2 from Excel still counts as
+     * 2 places, so the check allows a tiny rounding error and the value is stored rounded.
+     *
+     * @return array{0: float|null, 1: string|null}
+     */
+    private function parseDecimal(mixed $value, ?int $max, string $message): array
+    {
+        $number = is_string($value) ? str_replace(',', '', trim($value)) : $value;
+        if (! is_numeric($number)) {
+            return [null, "\"{$value}\" {$message}"];
+        }
+        $number = (float) $number;
+        if ($number < 0 || ($max !== null && $number > $max)) {
+            return [null, "{$number} {$message}"];
+        }
+        if (abs(round($number, 2) - $number) > 1e-9) {
+            return [null, "{$number} มีทศนิยมเกิน 2 ตำแหน่ง"];
+        }
+
+        return [round($number, 2), null];
+    }
+
+    /**
+     * Also used by ImportFileReader to build row keys, so it's public and static.
+     *
      * @return array{0: string|null, 1: string|null}
      */
-    private function parseDate(mixed $value): array
+    public static function parseDate(mixed $value): array
     {
         $date = null;
         if (is_int($value) || is_float($value) || (is_string($value) && is_numeric($value))) {

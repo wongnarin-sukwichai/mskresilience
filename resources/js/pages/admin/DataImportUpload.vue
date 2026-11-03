@@ -38,6 +38,7 @@ type HistoryItem = {
     communityCount: number;
 };
 
+// Past imports (and cancelling them) live in the ประวัตินำเข้า menu (pages/admin/ImportHistory.vue).
 const props = defineProps<{
     group: { value: string; label: string; sheet: string };
     columns: string[];
@@ -45,7 +46,6 @@ const props = defineProps<{
     exampleRows: (string | number | null)[][];
     importReady: boolean;
     preview: Preview | null;
-    history: HistoryItem[];
     lastImport: HistoryItem | null;
 }>();
 
@@ -432,7 +432,13 @@ function formatFileSize(bytes: number) {
                 <i class="fa-solid fa-file-excel mr-1 text-emerald-600"></i>{{ lastImport.filename }} · นำเข้าเมื่อ
                 {{ formatDateTime(lastImport.createdAt) }} โดย {{ lastImport.user ?? '–' }}
             </p>
-            <div class="mt-5 flex justify-center">
+            <div class="mt-5 flex justify-center gap-3">
+                <Link
+                    :href="route('import-history.index')"
+                    class="rounded-xl border border-slate-200 bg-white px-5 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                    <i class="fa-solid fa-clock-rotate-left mr-1.5"></i>ดูประวัตินำเข้า
+                </Link>
                 <button
                     type="button"
                     class="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -827,35 +833,6 @@ function formatFileSize(bytes: number) {
                         </button>
                     </div>
                 </template>
-            </div>
-        </div>
-
-        <!-- History -->
-        <div v-if="history.length" class="mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-            <h2 class="mb-3 font-semibold text-slate-800">ประวัติการนำเข้า</h2>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-slate-100 text-left text-xs text-slate-500">
-                            <th class="py-2 pr-4 font-medium">วันที่นำเข้า</th>
-                            <th class="py-2 pr-4 font-medium">ผู้นำเข้า</th>
-                            <th class="py-2 pr-4 font-medium">ไฟล์</th>
-                            <th class="py-2 pr-4 text-right font-medium">แถว</th>
-                            <th class="py-2 pr-4 text-right font-medium">ชุมชน</th>
-                            <th class="py-2 text-right font-medium">แทนที่ข้อมูลเดิม</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="h in history" :key="h.id" class="border-b border-slate-50 text-slate-700 last:border-0">
-                            <td class="whitespace-nowrap py-2 pr-4">{{ formatDateTime(h.createdAt) }}</td>
-                            <td class="py-2 pr-4">{{ h.user ?? '–' }}</td>
-                            <td class="max-w-xs truncate py-2 pr-4" :title="h.filename">{{ h.filename }}</td>
-                            <td class="py-2 pr-4 text-right">{{ h.rowCount }}</td>
-                            <td class="py-2 pr-4 text-right">{{ h.communityCount }}</td>
-                            <td class="py-2 text-right">{{ h.replacedCount }}</td>
-                        </tr>
-                    </tbody>
-                </table>
             </div>
         </div>
 

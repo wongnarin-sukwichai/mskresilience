@@ -11,6 +11,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 // Authenticated-state header chip — without this, the page showed a generic "เข้าสู่ระบบ" button no matter
 // who was logged in, so there was no way to see you were signed in as a different account, or to log out.
 const page = usePage<SharedData>();
+const props = defineProps<{ openLogin?: boolean }>();
 const authUser = computed(() => page.props.auth.user);
 const canAccessAdminPanel = computed(() => !!authUser.value && ['admin', 'staff'].includes(authUser.value.role));
 const userMenuOpen = ref(false);
@@ -372,6 +373,11 @@ onMounted(() => {
     initMap();
     dateTimer = setInterval(updateDateText, 60000);
     document.addEventListener('click', handleUserMenuClickOutside);
+
+    // GET /login has no page of its own: it redirects here with `openLogin`, e.g. when a guest opens an admin
+    // URL or after a password reset (which also flashes a `status` message).
+    if (props.openLogin && !page.props.auth.user) openLoginModal();
+    if (page.props.flash.status) showToast('สำเร็จ', page.props.flash.status);
 });
 
 onUnmounted(() => {

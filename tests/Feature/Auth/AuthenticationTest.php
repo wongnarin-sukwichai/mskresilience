@@ -11,11 +11,28 @@ class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_login_screen_can_be_rendered()
+    public function test_login_url_shows_the_home_page_with_the_login_modal()
     {
-        $response = $this->get('/login');
+        $this->get('/login')->assertRedirect(route('home'));
 
-        $response->assertStatus(200);
+        $this->get('/')->assertInertia(fn ($page) => $page->component('Welcome')->where('openLogin', true));
+        $this->get('/')->assertInertia(fn ($page) => $page->where('openLogin', false));
+    }
+
+    public function test_guests_opening_an_admin_page_land_on_the_home_page()
+    {
+        $this->get('/dashboard')->assertRedirect(route('login'));
+        $this->get('/login')->assertRedirect(route('home'));
+    }
+
+    public function test_login_redirect_keeps_the_status_message()
+    {
+        // Flashed the way NewPasswordController's to_route('login')->with('status') leaves it.
+        $this->withSession(['status' => 'ตั้งรหัสผ่านใหม่เรียบร้อยแล้ว กรุณาเข้าสู่ระบบ', '_flash' => ['old' => [], 'new' => ['status']]])->get('/login');
+
+        $this->get('/')->assertInertia(fn ($page) => $page
+            ->where('openLogin', true)
+            ->where('flash.status', 'ตั้งรหัสผ่านใหม่เรียบร้อยแล้ว กรุณาเข้าสู่ระบบ'));
     }
 
     public function test_admin_staff_and_member_are_redirected_to_the_dashboard_after_login()

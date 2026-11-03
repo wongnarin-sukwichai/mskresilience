@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Import\ColumnDescriptions;
 use App\Import\ImportColumns;
 use App\Import\ImportExamples;
+use App\Import\ImportHistory;
 use App\Import\ImportSheets;
 use App\Import\ImportValidator;
 use App\Import\TemplateBuilder;
@@ -61,12 +62,11 @@ class DataImportController extends Controller
             'importReady' => ImportSheets::for($group) !== null,
             // The validation result of the file waiting for confirmation, if any (flashed by validateFile()).
             'preview' => $preview && $pending ? [...$preview, 'token' => $pending['token'], 'filename' => $pending['filename']] : null,
-            'history' => ImportBatch::where('work_group', $group)->with('user:id,name')->latest('id')->limit(10)->get()
-                ->map(fn (ImportBatch $b) => $this->batchSummary($b)),
-            // The import just confirmed (flashed by confirm()), for the success card.
+            // The import just confirmed (flashed by confirm()), for the success card. Past imports are in the
+            // ประวัตินำเข้า menu (ImportHistoryController).
             'lastImport' => ($id = $request->session()->get('importedBatchId'))
                 && ($batch = ImportBatch::with('user:id,name')->where('work_group', $group)->find($id))
-                ? $this->batchSummary($batch) : null,
+                ? ImportHistory::summary($batch) : null,
         ]);
     }
 
@@ -165,22 +165,6 @@ class DataImportController extends Controller
         // No `status` toast: the page shows its own "saving" steps and then a success card (lastImport),
         // and a toast would pop up before those finish.
         return to_route('data-import.show', $group)->with('importedBatchId', $batch->id);
-    }
-
-    /**
-     * @return array{id: int, createdAt: string, user: string|null, filename: string, rowCount: int, replacedCount: int, communityCount: int}
-     */
-    private function batchSummary(ImportBatch $batch): array
-    {
-        return [
-            'id' => $batch->id,
-            'createdAt' => $batch->created_at->toIso8601String(),
-            'user' => $batch->user?->name,
-            'filename' => $batch->original_filename,
-            'rowCount' => $batch->row_count,
-            'replacedCount' => $batch->replaced_count,
-            'communityCount' => $batch->community_count,
-        ];
     }
 
     /**

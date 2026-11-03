@@ -7,9 +7,10 @@ withDefaults(
         title: string;
         message: string;
         confirmLabel?: string;
+        processingLabel?: string;
         processing?: boolean;
     }>(),
-    { confirmLabel: 'ยืนยันลบ', processing: false },
+    { confirmLabel: 'ยืนยันลบ', processingLabel: 'กำลังลบ...', processing: false },
 );
 
 const emit = defineEmits<{
@@ -52,7 +53,7 @@ const emit = defineEmits<{
                         class="flex-1 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         <i v-if="processing" class="fa-solid fa-spinner fa-spin mr-1"></i>
-                        {{ processing ? 'กำลังลบ...' : confirmLabel }}
+                        {{ processing ? processingLabel : confirmLabel }}
                     </button>
                 </div>
             </div>

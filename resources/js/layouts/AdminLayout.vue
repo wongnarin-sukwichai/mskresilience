@@ -52,7 +52,10 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
               {
                   label: 'จัดการข้อมูล',
                   icon: 'fa-solid fa-database',
-                  children: [{ label: 'นำเข้าข้อมูล', icon: 'fa-solid fa-cloud-arrow-up', href: route('data-import.index') }],
+                  children: [
+                      { label: 'นำเข้าข้อมูล', icon: 'fa-solid fa-cloud-arrow-up', href: route('data-import.index') },
+                      { label: 'ประวัตินำเข้า', icon: 'fa-solid fa-clock-rotate-left', href: route('import-history.index') },
+                  ],
               },
           ]
         : []),
@@ -66,6 +69,7 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
                   { label: 'จัดการสมาชิก', icon: 'fa-solid fa-user-gear', href: route('users.index') },
                   { label: 'จัดการชุมชน', icon: 'fa-solid fa-map-location-dot', href: route('communities.index') },
                   { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
+                  { label: 'จัดการประวัตินำเข้า', icon: 'fa-solid fa-list-check', href: route('import-batches.index') },
               ],
           }
         : { label: 'ตั้งค่าระบบ', icon: 'fa-solid fa-gear' },

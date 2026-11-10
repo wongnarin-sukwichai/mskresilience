@@ -77,7 +77,12 @@ export interface CriteriaTab {
 export interface ScoringCriteriaSet {
     id: number;
     name: string;
-    is_active: boolean;
+    /** First ปีงบประมาณ (พ.ศ.) this set applies to. */
+    start_fiscal_year: number;
+    /** Last fiscal year it covers (the year before the next set starts); null = open-ended. */
+    end_fiscal_year: number | null;
+    /** Fiscal years with imported data that resolve to this set; non-empty = in use, read-only. */
+    used_years: number[];
     is_locked: boolean;
     weights: CriteriaWeights;
     created_at: string;

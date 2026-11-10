@@ -140,6 +140,21 @@ abstract class TableSheet implements ImportSheet
         }
     }
 
+    public function recordDates(): array
+    {
+        return $this->query()->distinct()->pluck($this->dateColumn())
+            ->map(fn ($date) => substr((string) ($date instanceof \DateTimeInterface ? $date->format('Y-m-d') : $date), 0, 10))
+            ->unique()->values()->all();
+    }
+
+    /**
+     * The table column holding the record's date, for recordDates().
+     */
+    protected function dateColumn(): string
+    {
+        return 'assessment_date';
+    }
+
     protected function query(): Builder
     {
         return $this->model()::query();

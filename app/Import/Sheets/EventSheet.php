@@ -21,6 +21,11 @@ class EventSheet extends TableSheet
         return DisasterEvent::class;
     }
 
+    protected function dateColumn(): string
+    {
+        return 'event_start';
+    }
+
     public function rules(): array
     {
         return [

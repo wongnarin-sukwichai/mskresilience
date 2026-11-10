@@ -202,11 +202,11 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
   - **Original files are kept forever** (owner, 2026-11-03), in `storage/app/private/imports/Y/m/d/`. Back that folder up separately from the DB in production.
   - **Fixing one wrong row** means re-importing a file with just that row (owner, 2026-11-03). An in-web edit form is for later, admin-only.
 - **Icons:** card icons live in `resources/js/data/workGroupIcons.ts`. Labels and sheet names always come from `WorkGroup::options()`.
-- **Next:** the remaining 7 sheets, one at a time. The 2026-10-05 plan (staging, รอตรวจสอบ/โปรดแก้ไข statuses, admin confirms batches) is **superseded**: there is no admin review. Not decided yet: the dashboard's "latest per community" rule.
+- **Next:** the remaining 7 sheets, one at a time. The 2026-10-05 plan (staging, รอตรวจสอบ/โปรดแก้ไข statuses, admin confirms batches) is **superseded**: there is no admin review. The dashboard's data round is the latest record per sheet per community (owner, 2026-11-06).
 
 `AdminLayout`'s `isActive()` also matches sub-paths, so นำเข้าข้อมูล stays highlighted (and its module open) on `/data-import/{group}`.
 
-**`จัดการเกณฑ์คะแนน`** (`/scoring-criteria`, `role:admin` only): **real, DB-backed since 2026-10-29**, built with the owner as the backend rebuild's 2nd menu. The code is `App\Scoring\CriteriaSchema`, `ScoringCriteriaController`, `ScoringCriteriaSetRequest`, model `ScoringCriteriaSet`, table `scoring_criteria_sets` (`name` unique, `is_active`, `is_locked`, `weights` JSON), and `resources/js/pages/admin/ScoringCriteria.vue`. The page no longer touches the mock `criteriaList`.
+**`จัดการเกณฑ์คะแนน`** (`/scoring-criteria`, `role:admin` only): **real, DB-backed since 2026-10-29**, built with the owner as the backend rebuild's 2nd menu. The code is `App\Scoring\CriteriaSchema`, `ScoringCriteriaController`, `ScoringCriteriaSetRequest`, model `ScoringCriteriaSet`, table `scoring_criteria_sets` (`name` unique, `start_fiscal_year` unique, `is_locked`, `weights` JSON), and `resources/js/pages/admin/ScoringCriteria.vue`. The page no longer touches the mock `criteriaList`.
 
 - **Structure:** it holds เกณฑ์กลาง = **weights only** from the client's `ค่าถ่วงน้ำหนัก.docx`: 112 weights in 15 sections across 8 tabs (ภัยรวม, รายภัย, V รายกลุ่ม, V รายภัย, C รายกลุ่ม, C6/C7 รายภัย, C รวมรายภัย, Recovery). `CriteriaSchema` is the **single source of truth** for that structure, the default values, the validation and the normalization. The page gets it as the `schema` prop, so never re-declare the structure in TS.
 - **Storage:** weights are stored section → row → column, with `'ALL'` as the row for single-row "list" sections. A `null` schema cell means "not in this hazard's formula": it shows as "–", isn't editable and isn't stored.
@@ -215,18 +215,18 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
   - Every row must sum to exactly 1 or the set can't be saved; the UI shows a live sum and the server re-checks. Each weight is 0–1 with ≤4 decimals.
   - E+V sum to 1. The C factor (default 0.16) is a multiplier and is **not** summed. It is editable with no 0.20 cap (owner choice); above 0.20 the UI shows only a non-blocking warning that high-capacity HEVC can go negative.
   - V_WARNING is a fixed 1.
-  - Exactly one set is active, and `activate` deactivates the rest.
-  - Admin locks/unlocks manually, and a locked set can't be updated (403).
-  - Any set can be cloned; the clone starts inactive and unlocked.
-  - Delete is allowed only when the set is neither active nor locked.
-  - Set names are free text (e.g. "2569–2575"), not tied to a year.
+  - Set names are free text (e.g. "2569–2575"); which data a set applies to comes from its start year (below).
   - Internal hazard keys are `FLOOD/FIRE/STORM/HEAT/PM25`, never "PM2.5" as a key; the display shows "PM2.5".
-- **Seed:** `ScoringCriteriaSeeder` creates the first set from the docx, active and unlocked.
-- **Deferred to later menus, not decided yet:**
-  - Per-hazard E/V/C (open Q1): there is one shared set for now.
-  - Whether R*_OBSERVED uses the same Recovery weights (Q5).
-  - Assessments snapshotting which set computed them, plus "used sets can't be deleted" (Q9/Q10).
-- **No consumers yet:** the display pages that used the old mock criteria were deleted. Future calculation pages read the active DB set.
+- **Criteria by fiscal year (owner 2026-11-06, built 2026-11-10; replaced "exactly one active set" + the activate button, `is_active` was dropped):** each set has a required, unique `start_fiscal_year` (ปีงบประมาณ พ.ศ., Oct–Sep). `App\Scoring\CriteriaSets` is the single source of truth:
+  - `fiscalYear($date)`: Oct starts the next year (2024-10-01 → 2568).
+  - `resolve($fy, $sets)`: the set with the latest start ≤ fy; data older than every set uses the **earliest** set (the UI notes this).
+  - **In use = auto-locked:** a set that any imported record resolves to (`usage()`, computed live from every sheet's `ImportSheet::recordDates()`: ASSESSMENT_DATE, or EVENT_START for events) can't be edited, unlocked or deleted (red toast). Not stored: cancelling the last import of a year frees the set again.
+  - `conflict()`: creating a set or changing a start year is refused (validation error on `start_fiscal_year`) if any fiscal year with data would resolve to a different set. So a new set must start after the latest year with data, and new numbers come from **คัดลอก** with a later start year.
+  - The manual lock/unlock stays for unused sets. Delete needs unused + unlocked, and never the last set.
+  - Existing sets were migrated to start 2568 (the earliest data, Jan 2025). The seeder also uses 2568.
+- **Settled engine rules (owner 2026-11-06):** no per-hazard E/V/C weights, ever (one set: 0.3846/0.6154/0.16). R*_OBSERVED uses the same Recovery weights as R1–R5. HEVC max is ~84, which is accepted (Q6 = ก): no rescale, `C_HEVC = 1 + 0.8·C_RAW` and the bands 0–24/25–49/50–74/75–100 stay. No cross-hazard V or C totals; the rollup happens only at MULTI_HAZARD_HEVC. The data round is the latest record per sheet per community.
+- **Still to build:** when comparing rounds, the UI shows which set each side used, and an executive can recompute both sides with one chosen set as a read-only what-if.
+- **No consumers yet:** the calc engine isn't built. It must pick each record's set through `CriteriaSets::resolve()`.
 
 staff/member don't see this menu at all (unlike the roadmap placeholders, which everyone sees grayed-out) — a future "which year's criteria to view" selector for them belongs as a read-only filter on the dashboard/reports, not a sidebar menu entry, per the earlier design discussion.
 
@@ -234,7 +234,7 @@ staff/member don't see this menu at all (unlike the roadmap placeholders, which 
 - `MSK-Resilience_ข้อกำหนดการออกแบบการแสดงผล_5หน้า_v5.docx` **ภาคผนวก B** gives the raw→0–5 band of every input. For example, E% is `0/>0–20/…/>80–100`, V group % is `0/>0–<5/5–<10/10–<20/20–<30/≥30`, and V_INFRA is count ÷ 10 × 100. C4_1, C4_2, C5_3, C6_3 and C8_1–C8_3 are covered too.
 - **§1.3** gives the risk bands: 0–24 ต่ำ (green), 25–49 ปานกลาง (yellow), 50–74 ค่อนข้างสูง (orange), 75–100 สูง (red).
 - §5.9 gives the KPI % formulas.
-- Appendix B disagrees with the import rules for C5_3 and C8_3 (counts there, SCORE 0–5 in the importer) and is ambiguous for C6_3. This is still open with the owner.
+- Where Appendix B and the importer differ, the owner settled it on 2026-11-06. C5_3, C8_3 and V_INFRA_GAP_* are 0–5 scores entered by staff and used as-is: no ÷10 for V_INFRA. Since 2026-11-10 the importer validates V_INFRA_GAP_* as SCORE, and the template comments say "ค่าที่กรอก: N/A,0,1,2,3,4,5". C6_3 is a % input, banded per Appendix B (0%=0, >0–20=1, >20–40=2, >40–60=3, >60–80=4, >80–100=5).
 
 **A "ตรวจสอบการคำนวณ" (calc-trace) menu is deferred** until after the 6 display pages (owner, 2026-11-03). When it's built, it must render a trace produced by the real calc engine, not a separate formula description. The TEMPORARY mock `/calc-preview` (`pages/admin/CalcPreview.vue` + 1 route + 1 nav entry, all marked ⚠️) is only a picture. Its bands are invented, so don't build on it.
 

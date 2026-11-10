@@ -7,6 +7,8 @@ import { computed, ref } from 'vue';
 
 const props = defineProps<{
     sets: ScoringCriteriaSet[];
+    dataYears: number[];
+    currentFiscalYear: number;
     schema: CriteriaTab[];
 }>();
 
@@ -15,19 +17,37 @@ const props = defineProps<{
 // successful action — never via a props watcher, which would wipe the admin's edits when a save comes back
 // with validation errors.
 // ---------------------------------------------------------------------------------------------------------
-const selectedId = ref<number | null>(props.sets.find((s) => s.is_active)?.id ?? props.sets[0]?.id ?? null);
+// Sets come sorted by start_fiscal_year. A fiscal year resolves to the set with the latest start ≤ it, or the
+// earliest set for older years (App\Scoring\CriteriaSets::resolve).
+function setForYear(year: number): ScoringCriteriaSet | null {
+    return [...props.sets].reverse().find((s) => s.start_fiscal_year <= year) ?? props.sets[0] ?? null;
+}
+
+function defaultSelectedId(): number | null {
+    return setForYear(props.currentFiscalYear)?.id ?? null;
+}
+
+const selectedId = ref<number | null>(defaultSelectedId());
 const selectedSet = computed(() => props.sets.find((s) => s.id === selectedId.value) ?? null);
-const isLocked = computed(() => selectedSet.value?.is_locked ?? true);
+const inUse = computed(() => (selectedSet.value?.used_years.length ?? 0) > 0);
+const isLocked = computed(() => !selectedSet.value || selectedSet.value.is_locked || inUse.value);
+
+function coverageText(set: ScoringCriteriaSet): string {
+    if (set.end_fiscal_year === null) return `ปีงบ ${set.start_fiscal_year} เป็นต้นไป`;
+    if (set.end_fiscal_year === set.start_fiscal_year) return `ปีงบ ${set.start_fiscal_year}`;
+    return `ปีงบ ${set.start_fiscal_year}–${set.end_fiscal_year}`;
+}
 
 const form = useForm({
     name: '',
+    start_fiscal_year: 0 as number,
     weights: {} as CriteriaWeights,
 });
 
 function loadSelected() {
     const set = selectedSet.value;
     if (!set) return;
-    form.defaults({ name: set.name, weights: JSON.parse(JSON.stringify(set.weights)) });
+    form.defaults({ name: set.name, start_fiscal_year: set.start_fiscal_year, weights: JSON.parse(JSON.stringify(set.weights)) });
     form.reset();
     form.clearErrors();
 }
@@ -96,7 +116,9 @@ function tabHasProblem(tab: CriteriaTab): boolean {
     return tab.sections.some((section) => section.rows.some((row) => rowHasProblem(section, row)));
 }
 
-const formHasProblem = computed(() => props.schema.some(tabHasProblem) || form.name.trim() === '');
+const formHasProblem = computed(
+    () => props.schema.some(tabHasProblem) || form.name.trim() === '' || !Number.isInteger(form.start_fiscal_year) || form.start_fiscal_year < 2500,
+);
 
 function formatSum(value: number): string {
     const rounded = Number(value.toFixed(4));
@@ -125,19 +147,23 @@ function save() {
     });
 }
 
-function postAction(name: 'activate' | 'lock' | 'unlock') {
+function postAction(name: 'lock' | 'unlock') {
     if (!selectedSet.value) return;
     router.post(route(`scoring-criteria.${name}`, selectedSet.value.id), {}, { preserveScroll: true, onSuccess: () => loadSelected() });
 }
 
 // Clone
 const cloneOpen = ref(false);
-const cloneForm = useForm({ name: '', copy_from: 0 });
+const cloneForm = useForm({ name: '', start_fiscal_year: 0 as number, copy_from: 0 });
+
+// A new set can only start after every year that already has data (otherwise that data would move to it).
+const suggestedStartYear = computed(() => Math.max(...props.sets.map((s) => s.start_fiscal_year), ...props.dataYears) + 1);
 
 function openClone() {
     if (!selectedSet.value) return;
     cloneForm.clearErrors();
     cloneForm.name = `${selectedSet.value.name} (สำเนา)`;
+    cloneForm.start_fiscal_year = suggestedStartYear.value;
     cloneForm.copy_from = selectedSet.value.id;
     cloneOpen.value = true;
 }
@@ -160,7 +186,13 @@ function submitClone() {
 // Delete
 const deleteOpen = ref(false);
 const deleting = ref(false);
-const canDelete = computed(() => !!selectedSet.value && !selectedSet.value.is_active && !selectedSet.value.is_locked);
+const canDelete = computed(() => !isLocked.value && props.sets.length > 1);
+const deleteBlockedReason = computed(() => {
+    if (inUse.value) return 'ชุดนี้มีข้อมูลใช้คำนวณแล้ว ลบไม่ได้';
+    if (selectedSet.value?.is_locked) return 'ปลดล็อกก่อนจึงจะลบได้';
+    if (props.sets.length <= 1) return 'ต้องมีชุดเกณฑ์อย่างน้อย 1 ชุด';
+    return '';
+});
 
 function destroySet() {
     if (!selectedSet.value) return;
@@ -169,7 +201,7 @@ function destroySet() {
         preserveScroll: true,
         onSuccess: () => {
             deleteOpen.value = false;
-            selectedId.value = props.sets.find((s) => s.is_active)?.id ?? props.sets[0]?.id ?? null;
+            selectedId.value = defaultSelectedId();
             loadSelected();
         },
         onFinish: () => (deleting.value = false),
@@ -193,7 +225,7 @@ const inputClass =
             <div class="h-fit overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm xl:col-span-1">
                 <div class="border-b border-slate-100 p-5">
                     <h2 class="font-semibold text-slate-800">ชุดเกณฑ์คะแนน</h2>
-                    <p class="mt-0.5 text-sm text-slate-400">ทั้งหมด {{ sets.length }} ชุด · ใช้งานได้ทีละ 1 ชุด</p>
+                    <p class="mt-0.5 text-sm text-slate-400">ทั้งหมด {{ sets.length }} ชุด · แต่ละชุดใช้กับข้อมูลตามปีงบประมาณ</p>
                 </div>
                 <ul class="divide-y divide-slate-100">
                     <li v-for="set in sets" :key="set.id">
@@ -206,11 +238,19 @@ const inputClass =
                             <span class="text-sm font-medium" :class="set.id === selectedId ? 'text-blue-700' : 'text-slate-700'">{{
                                 set.name
                             }}</span>
+                            <span class="text-xs font-medium text-slate-500"><i class="fa-regular fa-calendar mr-1"></i>{{ coverageText(set) }}</span>
                             <span class="flex flex-wrap items-center gap-1.5 text-xs">
-                                <span v-if="set.is_active" class="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600">
-                                    <i class="fa-solid fa-circle-check mr-0.5"></i>ใช้งานอยู่
+                                <span
+                                    v-if="set.used_years.length"
+                                    class="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-600"
+                                    :title="`มีข้อมูลปีงบ ${set.used_years.join(', ')}`"
+                                >
+                                    <i class="fa-solid fa-database mr-0.5"></i>มีข้อมูลใช้แล้ว
                                 </span>
-                                <span v-if="set.is_locked" class="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500">
+                                <span
+                                    v-if="set.is_locked || set.used_years.length"
+                                    class="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-500"
+                                >
                                     <i class="fa-solid fa-lock mr-0.5"></i>ล็อก
                                 </span>
                                 <span v-else class="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-600">
@@ -236,16 +276,25 @@ const inputClass =
                         />
                         <p v-if="form.errors.name" class="mt-1.5 text-xs text-red-600">{{ form.errors.name }}</p>
                     </div>
+                    <div class="w-48">
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">เริ่มใช้ปีงบประมาณ (พ.ศ.)</label>
+                        <input
+                            v-model.number="form.start_fiscal_year"
+                            type="number"
+                            step="1"
+                            min="2500"
+                            max="2700"
+                            :disabled="isLocked"
+                            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 font-mono text-sm font-medium text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                        />
+                        <p v-if="form.errors.start_fiscal_year" class="mt-1.5 text-xs text-red-600">{{ form.errors.start_fiscal_year }}</p>
+                        <p v-else class="mt-1.5 text-[11px] text-slate-400">
+                            {{ coverageText(selectedSet) }}<template v-if="selectedSet.id === sets[0]?.id"> และข้อมูลก่อนหน้านั้น</template>
+                        </p>
+                    </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <button
-                            v-if="!selectedSet.is_active"
-                            type="button"
-                            @click="postAction('activate')"
-                            class="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
-                        >
-                            <i class="fa-solid fa-circle-check"></i>ตั้งเป็นชุดที่ใช้งาน
-                        </button>
-                        <button
+                            v-if="!inUse"
                             type="button"
                             :disabled="form.isDirty"
                             :title="form.isDirty ? 'บันทึกหรือยกเลิกการแก้ไขก่อน' : ''"
@@ -265,7 +314,7 @@ const inputClass =
                         <button
                             type="button"
                             :disabled="!canDelete"
-                            :title="canDelete ? '' : 'ลบได้เฉพาะชุดที่ไม่ได้ใช้งานและไม่ได้ล็อก'"
+                            :title="deleteBlockedReason"
                             @click="deleteOpen = true"
                             class="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                         >
@@ -274,7 +323,14 @@ const inputClass =
                     </div>
                 </div>
 
-                <div v-if="isLocked" class="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-sm text-slate-500">
+                <div v-if="inUse" class="flex items-start gap-2 border-b border-emerald-100 bg-emerald-50/60 px-5 py-2.5 text-sm text-emerald-800">
+                    <i class="fa-solid fa-lock mt-1 text-xs"></i>
+                    <span
+                        >ชุดนี้ใช้คำนวณข้อมูลปีงบประมาณ {{ selectedSet.used_years.join(', ') }} แล้ว จึงล็อกอัตโนมัติ ดูได้อย่างเดียว —
+                        หากต้องการค่าใหม่ ให้กด "คัดลอก" แล้วตั้งปีเริ่มใช้เป็นปีถัดไป</span
+                    >
+                </div>
+                <div v-else-if="isLocked" class="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-sm text-slate-500">
                     <i class="fa-solid fa-lock text-xs"></i>
                     ชุดนี้ถูกล็อกอยู่ ดูได้อย่างเดียว — กด "ปลดล็อก" เพื่อแก้ไข
                 </div>
@@ -488,7 +544,7 @@ const inputClass =
                 <form @submit.prevent="submitClone" class="space-y-4 p-6">
                     <p class="text-sm text-slate-500">
                         สร้างชุดใหม่โดยคัดลอกค่าทั้งหมดจาก "<span class="font-medium text-slate-700">{{ selectedSet?.name }}</span
-                        >" ชุดใหม่จะยังไม่ใช้งานและแก้ไขได้
+                        >" ชุดใหม่จะแก้ไขได้จนกว่าจะมีข้อมูลในปีงบประมาณที่ชุดนี้ครอบคลุม
                     </p>
                     <div>
                         <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">ชื่อชุดใหม่</label>
@@ -499,6 +555,24 @@ const inputClass =
                             class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
                         />
                         <p v-if="cloneForm.errors.name" class="mt-1.5 text-xs text-red-600">{{ cloneForm.errors.name }}</p>
+                    </div>
+                    <div>
+                        <label class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">เริ่มใช้ปีงบประมาณ (พ.ศ.)</label>
+                        <input
+                            v-model.number="cloneForm.start_fiscal_year"
+                            type="number"
+                            step="1"
+                            min="2500"
+                            max="2700"
+                            required
+                            class="w-40 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        />
+                        <p v-if="cloneForm.errors.start_fiscal_year" class="mt-1.5 text-xs text-red-600">{{ cloneForm.errors.start_fiscal_year }}</p>
+                        <p v-else class="mt-1.5 text-[11px] text-slate-400">
+                            ปีงบประมาณ = ต.ค.–ก.ย. ข้อมูลตั้งแต่ปีนี้ไปจะคำนวณด้วยชุดใหม่<template v-if="dataYears.length">
+                                (ต้องหลังปีที่มีข้อมูลแล้ว: {{ dataYears.join(', ') }})</template
+                            >
+                        </p>
                     </div>
                     <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
                         <button

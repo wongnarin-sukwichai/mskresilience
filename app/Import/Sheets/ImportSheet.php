@@ -75,6 +75,14 @@ interface ImportSheet
     public function referencesCommunity(int $communityId): bool;
 
     /**
+     * The distinct dates (Y-m-d) of the records now in this sheet's table: ASSESSMENT_DATE, or EVENT_START for
+     * events. App\Scoring\CriteriaSets maps them to fiscal years to know which criteria sets are in use.
+     *
+     * @return list<string>
+     */
+    public function recordDates(): array;
+
+    /**
      * Checks across rows or against data already in the system, run by ImportValidator only when the file has no
      * other errors. Each one becomes a line in the step-by-step list, and its warnings/errors join the file's.
      * Warnings never block (e.g. KPI above its group, owner decision 2026-11-03); errors do (e.g. an EVENT_ID

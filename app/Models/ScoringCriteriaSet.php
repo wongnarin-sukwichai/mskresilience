@@ -4,6 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * A เกณฑ์กลาง weights set. Which data it applies to comes from start_fiscal_year (พ.ศ.), see
+ * App\Scoring\CriteriaSets. is_locked is the admin's manual lock; a set in use by data is read-only regardless.
+ */
 class ScoringCriteriaSet extends Model
 {
     /**
@@ -13,7 +17,7 @@ class ScoringCriteriaSet extends Model
      */
     protected $fillable = [
         'name',
-        'is_active',
+        'start_fiscal_year',
         'is_locked',
         'weights',
     ];
@@ -26,7 +30,7 @@ class ScoringCriteriaSet extends Model
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
+            'start_fiscal_year' => 'integer',
             'is_locked' => 'boolean',
             'weights' => 'array',
         ];

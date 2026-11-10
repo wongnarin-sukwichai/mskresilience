@@ -58,7 +58,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('scoring-criteria', ScoringCriteriaController::class)
             ->except(['create', 'edit', 'show'])
             ->parameters(['scoring-criteria' => 'set']);
-        Route::post('scoring-criteria/{set}/activate', [ScoringCriteriaController::class, 'activate'])->name('scoring-criteria.activate');
         Route::post('scoring-criteria/{set}/lock', [ScoringCriteriaController::class, 'lock'])->name('scoring-criteria.lock');
         Route::post('scoring-criteria/{set}/unlock', [ScoringCriteriaController::class, 'unlock'])->name('scoring-criteria.unlock');
     });

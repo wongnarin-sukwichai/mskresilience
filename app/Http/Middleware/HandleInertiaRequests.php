@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Community;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -45,6 +46,10 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // The admin header's community search (AdminLayout) — only for logged-in users; 32 rows of code + name.
+            'communityIndex' => fn () => $request->user()
+                ? Community::orderBy('code')->get(['code', 'name'])
+                : [],
             // Controllers flash a Thai success message via back()->with('status', ...) or a refusal via
             // back()->with('error', ...); AdminLayout shows either as a toast (green / red).
             'flash' => [

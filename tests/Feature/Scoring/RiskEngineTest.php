@@ -218,9 +218,52 @@ class RiskEngineTest extends TestCase
         $result = (new RiskEngine)->run();
         [$a, $b] = $result['communities'];
 
-        $this->assertEqualsWithDelta(($a['multi']['hevc'] * 1240 + $b['multi']['hevc'] * 3720) / 4960, $result['city']['multi']['hevc'], 1e-9);
+        $this->assertEqualsWithDelta(($a['multi']['hevc'] * 1240 + $b['multi']['hevc'] * 3720) / 4960, $result['city']['multi']['value'], 1e-9);
         $this->assertSame(2, $result['city']['multi']['communities']);
-        $this->assertSame(1, $result['city']['missingCommunities']);
+        $this->assertSame(2, $result['city']['scoredCommunities']);
+        $this->assertSame(['R003'], array_column($result['city']['missing'], 'code'));
         $this->assertSame(3, $result['city']['totalCommunities']);
+        $this->assertSame(1240 + 3720, $result['city']['counts']['population']);
+        $this->assertEqualsWithDelta(
+            ($a['groups']['C4'] * 1240 + $b['groups']['C4'] * 3720) / 4960,
+            $result['city']['groups']['C4'],
+            1e-9,
+        );
+        $this->assertNull($result['city']['multi']['delta']); // one round only
+    }
+
+    public function test_previous_round_is_the_day_before_the_newest_data_and_city_delta_compares_like_with_like()
+    {
+        $this->makeSet(2568);
+        // R001: a new welfare round on 2025-06-01 (elderly 15% → 40%); every other sheet stays the same.
+        $this->seedCommunity('R001', '2025-01-20');
+        DB::table('welfare_records')->insert(array_merge($this->r001()['welfare_records'], [
+            'community_id' => Community::where('code', 'R001')->value('id'),
+            'assessment_date' => '2025-06-01',
+            'v_elderly_count' => 496,
+        ]));
+        // R002: one round only, so no previous.
+        $this->seedCommunity('R002', '2025-01-20');
+
+        $result = (new RiskEngine)->run();
+        [$a, $b] = $result['communities'];
+
+        $this->assertSame('2025-01-20', $a['previous']['dataDate']);
+        $this->assertGreaterThan($a['previous']['multi']['hevc'], $a['multi']['hevc']);
+        $this->assertNull($b['previous']);
+
+        // City Δ only uses R001 (the one with both rounds).
+        $this->assertSame(1, $result['city']['multi']['deltaCommunities']);
+        $this->assertEqualsWithDelta($a['multi']['hevc'] - $a['previous']['multi']['hevc'], $result['city']['multi']['delta'], 1e-9);
+        $this->assertSame('2025-01-20', $result['city']['previousDataDate']);
+    }
+
+    public function test_fiscal_years_with_data()
+    {
+        $this->seedCommunity('R001', '2025-01-20');
+        $this->seedCommunity('R002', '2025-10-01');
+
+        $this->assertSame([2568, 2569], RiskEngine::fiscalYears());
+        $this->assertSame('2025-09-30', RiskEngine::fiscalYearEnd(2568));
     }
 }

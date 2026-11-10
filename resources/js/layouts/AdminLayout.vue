@@ -70,8 +70,6 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
                   { label: 'จัดการชุมชน', icon: 'fa-solid fa-map-location-dot', href: route('communities.index') },
                   { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
                   { label: 'จัดการประวัตินำเข้า', icon: 'fa-solid fa-list-check', href: route('import-batches.index') },
-                  // ⚠️ TEMPORARY mock page (see routes/admin.php calc-preview). Delete with it.
-                  { label: 'ตรวจสอบการคำนวณ (ตัวอย่าง)', icon: 'fa-solid fa-calculator', href: route('calc-preview') },
               ],
           }
         : { label: 'ตั้งค่าระบบ', icon: 'fa-solid fa-gear' },
@@ -149,12 +147,49 @@ function showFlash(flash: SharedData['flash'] | undefined) {
     else if (flash?.status) showToast(flash.status);
 }
 
+// Header search: find a community by name or code (R001), then open page 3 (แผนที่รายชุมชน) on it.
+const searchQuery = ref('');
+const searchOpen = ref(false);
+const searchIndex = ref(0);
+const searchRef = ref<HTMLElement | null>(null);
+const searchResults = computed(() => {
+    const q = searchQuery.value
+        .trim()
+        .replace(/^ชุมชน\s*/, '')
+        .toLowerCase();
+    if (!q) return [];
+    return (page.props.communityIndex ?? []).filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)).slice(0, 8);
+});
+function openCommunity(code: string) {
+    searchOpen.value = false;
+    searchQuery.value = '';
+    router.visit(route('community-map.index', { community: code }));
+}
+function onSearchKey(event: KeyboardEvent) {
+    const n = searchResults.value.length;
+    if (event.key === 'ArrowDown' && n) {
+        event.preventDefault();
+        searchIndex.value = (searchIndex.value + 1) % n;
+    } else if (event.key === 'ArrowUp' && n) {
+        event.preventDefault();
+        searchIndex.value = (searchIndex.value - 1 + n) % n;
+    } else if (event.key === 'Enter' && n) {
+        openCommunity(searchResults.value[searchIndex.value].code);
+    } else if (event.key === 'Escape') {
+        searchOpen.value = false;
+    }
+}
+function handleSearchClickOutside(event: MouseEvent) {
+    if (searchRef.value && !searchRef.value.contains(event.target as Node)) searchOpen.value = false;
+}
+
 let removeSuccessListener: (() => void) | null = null;
 
 onMounted(() => {
     updateDateText();
     dateTimer = setInterval(updateDateText, 60000);
     document.addEventListener('click', handleClickOutside);
+    document.addEventListener('click', handleSearchClickOutside);
     showFlash(page.props.flash);
     removeSuccessListener = router.on('success', (event) => showFlash((event.detail.page.props as unknown as SharedData).flash));
 });
@@ -164,6 +199,7 @@ onUnmounted(() => {
     if (toastTimer) clearTimeout(toastTimer);
     removeSuccessListener?.();
     document.removeEventListener('click', handleClickOutside);
+    document.removeEventListener('click', handleSearchClickOutside);
 });
 </script>
 
@@ -252,7 +288,7 @@ onUnmounted(() => {
                 </div>
                 <div class="flex items-center justify-between">
                     <span>เวอร์ชันระบบ</span>
-                    <span class="text-slate-300">v2.1.0</span>
+                    <span class="text-slate-300">v1.0.0</span>
                 </div>
             </div>
         </aside>
@@ -271,15 +307,44 @@ onUnmounted(() => {
 
                 <h1 class="hidden shrink-0 text-lg font-bold text-slate-800 md:block">{{ title }}</h1>
 
-                <div class="relative min-w-0 flex-1 md:max-w-sm">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div ref="searchRef" class="relative min-w-0 flex-1 md:max-w-sm">
+                    <span class="absolute inset-y-0 left-0 flex h-[38px] items-center pl-3 text-slate-400">
                         <i class="fa-solid fa-magnifying-glass text-sm"></i>
                     </span>
                     <input
-                        type="text"
-                        placeholder="ค้นหาชุมชน, จุดเสี่ยง, เหตุการณ์..."
+                        v-model="searchQuery"
+                        type="search"
+                        placeholder="ค้นหาชุมชน (ชื่อหรือรหัส)…"
+                        aria-label="ค้นหาชุมชน"
+                        autocomplete="off"
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        @focus="searchOpen = true"
+                        @input="
+                            searchOpen = true;
+                            searchIndex = 0;
+                        "
+                        @keydown="onSearchKey"
                     />
+                    <div
+                        v-if="searchOpen && searchQuery.trim()"
+                        class="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg"
+                    >
+                        <button
+                            v-for="(c, i) in searchResults"
+                            :key="c.code"
+                            type="button"
+                            class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm"
+                            :class="i === searchIndex ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'"
+                            @mouseenter="searchIndex = i"
+                            @click="openCommunity(c.code)"
+                        >
+                            <i class="fa-solid fa-map-location-dot text-slate-400"></i>
+                            <span class="flex-1 truncate">{{ c.name }}</span>
+                            <span class="text-xs text-slate-400">{{ c.code }}</span>
+                        </button>
+                        <p v-if="!searchResults.length" class="px-3 py-2 text-sm text-slate-400">ไม่พบชุมชนที่ตรงกับ "{{ searchQuery.trim() }}"</p>
+                        <p v-else class="border-t border-slate-100 px-3 pb-1 pt-1.5 text-[11px] text-slate-400">เลือกเพื่อเปิดในหน้าแผนที่รายชุมชน</p>
+                    </div>
                 </div>
 
                 <div class="ml-auto flex shrink-0 items-center gap-2 lg:gap-4">
@@ -288,17 +353,7 @@ onUnmounted(() => {
                     >
                         <i class="fa-regular fa-calendar-days text-slate-400"></i>
                         {{ currentDateText }}
-                        <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
                     </div>
-
-                    <button type="button" class="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
-                        <i class="fa-regular fa-bell text-base"></i>
-                        <span
-                            class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
-                        >
-                            6
-                        </span>
-                    </button>
 
                     <div ref="userMenuRef" class="relative">
                         <button

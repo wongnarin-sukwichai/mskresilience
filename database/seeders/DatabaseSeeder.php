@@ -32,6 +32,16 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
+        User::updateOrCreate(
+            ['email' => 'thayukorn.p@msu.ac.th'],
+            [
+                'name' => 'ธายุกร พระบำรุง',
+                'password' => Hash::make('1234'),
+                'role' => UserRole::Admin,
+                'email_verified_at' => now(),
+            ],
+        );
+
         $this->call([CommunitySeeder::class, ScoringCriteriaSeeder::class]);
     }
 }

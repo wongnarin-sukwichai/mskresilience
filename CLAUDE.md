@@ -48,7 +48,7 @@ CI (`.github/workflows/`) runs `vendor/bin/pint`, `npm run format`, `npm run lin
 
 **Auth policy — self-registration is disabled.** `routes/auth.php` has no `register` routes (removed intentionally); `RegisteredUserController` and `pages/auth/Register.vue` still exist in the codebase but are unrouted/unlinked. Accounts are provisioned by an admin via `php artisan db:seed` (`database/seeders/DatabaseSeeder.php` seeds `test@example.com` / `password` as `member`, plus the real admin account below — replace/remove the test account before any real deployment). Login/logout/password-reset/email-verification all work normally through the standard Laravel session guard. **There is no separate login page** (owner decision 2026-11-03): `GET /login` (`AuthenticatedSessionController::create`) redirects to `/` and flashes `openLogin`, so `Welcome.vue` opens its login modal on mount. It also reflashes the session, so a `status` (e.g. after a password reset) reaches the home page, where it shows as a toast. `lang/th/passwords.php` keeps that message Thai. The `login` route name must stay: the `auth` middleware redirects guests to it, and the modal POSTs to it. `pages/auth/Login.vue` is now unrouted, like `Register.vue`. `Welcome.vue`'s login modal (email+password, "ลืมรหัสผ่าน?" switches the same modal to a password-reset-request form) posts to these same routes via Inertia's `useForm` — it is a real auth client, not a mock. The modal's "เข้าระบบด้วยบัญชี @gmail" button is intentionally disabled (`disabled`, no handler) — Google/Socialite login was explicitly descoped, not forgotten; wiring it up needs `composer require laravel/socialite`, real Google OAuth credentials in `.env`, and a decision on whether Google sign-in may auto-create new accounts (it should probably match the same "no self-service account creation" policy as password login, but that's a product decision to confirm, not assume).
 
-**Roles**: `App\Enums\UserRole` (`admin` | `staff` | `member`), stored as a plain `string` column on `users` (`role`, default `member`), cast to the enum on the `User` model. Route-level gating uses the `role:` middleware alias (`App\Http\Middleware\EnsureUserHasRole`, registered in `bootstrap/app.php`) — e.g. `Route::...->middleware(['auth', 'verified', 'role:admin,staff'])`. `User::canAccessAdminPanel()` is the **single source of truth** for "can this user reach `/dashboard`" (all three roles as of the current permission model — see the per-menu breakdown below) — both `AuthenticatedSessionController::store()` (post-login redirect) and `AppServiceProvider::boot()` (`RedirectIfAuthenticated::redirectUsing(...)`, for the `guest` middleware's "already logged in" redirect on `/login`) call it, and must keep calling it rather than re-deriving the role check inline. **This split was a real bug once**: Laravel's default `guest`-middleware redirect always targets `route('dashboard')` if it exists, with no regard for role — an already-logged-in member hitting `/login` (e.g. to switch accounts) got bounced straight into a 403 with their new credentials never even processed, and no visible way to log out to recover, since `Welcome.vue`'s header didn't show auth state at all. Both are now fixed (role-aware redirect + `Welcome.vue` shows a user chip/logout when `auth.user` is set) — if you add another role-gated route, ask whether the same two spots need updating. Seeded accounts: `test@example.com` / `password` (member), `wongnarin.s@msu.ac.th` / `w123` (admin, real credentials requested by the project owner — rotate before production).
+**Roles**: `App\Enums\UserRole` (`admin` | `staff` | `member`), stored as a plain `string` column on `users` (`role`, default `member`), cast to the enum on the `User` model. Route-level gating uses the `role:` middleware alias (`App\Http\Middleware\EnsureUserHasRole`, registered in `bootstrap/app.php`) — e.g. `Route::...->middleware(['auth', 'verified', 'role:admin,staff'])`. `User::canAccessAdminPanel()` is the **single source of truth** for "can this user reach `/dashboard`" (all three roles as of the current permission model — see the per-menu breakdown below) — both `AuthenticatedSessionController::store()` (post-login redirect) and `AppServiceProvider::boot()` (`RedirectIfAuthenticated::redirectUsing(...)`, for the `guest` middleware's "already logged in" redirect on `/login`) call it, and must keep calling it rather than re-deriving the role check inline. **This split was a real bug once**: Laravel's default `guest`-middleware redirect always targets `route('dashboard')` if it exists, with no regard for role — an already-logged-in member hitting `/login` (e.g. to switch accounts) got bounced straight into a 403 with their new credentials never even processed, and no visible way to log out to recover, since `Welcome.vue`'s header didn't show auth state at all. Both are now fixed (role-aware redirect + `Welcome.vue` shows a user chip/logout when `auth.user` is set) — if you add another role-gated route, ask whether the same two spots need updating. Seeded accounts: `test@example.com` / `password` (member), `wongnarin.s@msu.ac.th` / `w123` and `thayukorn.p@msu.ac.th` / `1234` (both admin, real accounts requested by the project owner, 2026-11-10 for the second — rotate both passwords before production).
 
 **Per-menu permission matrix** (current product decision, 2026-10-29, distinct from `canAccessAdminPanel()` which only gates the panel itself). Access is split **by module, not by page**:
 - **`admin`** gets every menu.
@@ -118,7 +118,94 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 - `riskLevelMeta`/`riskLevelFromScore`, using the **old** `<25/25–<50/50–<75/≥75` bands. Re-check these against the v4 spec before reusing them.
 - `seededValue()`, the deterministic pseudo-random helper. Don't reimplement a local `Math.sin()` seed per page.
 
-**Display pages** (`resources/js/pages/admin/{About,RiskOverview,CommunityMap,RiskFactors,ImpactRecovery,Mcr2030Kpi}.vue`): all 6 were **reset to empty placeholders** on 2026-10-29, per the owner's decision to delete and rebuild rather than adapt the old mock pages. Each one renders `components/admin/PagePlaceholder.vue` ("อยู่ระหว่างการพัฒนา"). The old mock pages (`Dashboard.vue`, `CommunityData.vue`, `DisasterOverview.vue`, `HazardAnalysis.vue`, `EventsLD.vue`) and their routes (`/community-data`, `/disaster-overview`, `/hazard-analysis`, `/events-ld`) are gone; they are still in git history if a past layout idea is worth recovering. Rebuild each page from the client's v4 spec when its turn comes, and replace the whole `<PagePlaceholder>`.
+**Display pages** (`resources/js/pages/admin/{About,RiskOverview,CommunityMap,RiskFactors,ImpactRecovery,Mcr2030Kpi}.vue`): all 6 were **reset to empty placeholders** on 2026-10-29, per the owner's decision to delete and rebuild rather than adapt the old mock pages. Each one renders `components/admin/PagePlaceholder.vue` ("อยู่ระหว่างการพัฒนา"). The old mock pages (`Dashboard.vue`, `CommunityData.vue`, `DisasterOverview.vue`, `HazardAnalysis.vue`, `EventsLD.vue`) and their routes (`/community-data`, `/disaster-overview`, `/hazard-analysis`, `/events-ld`) are gone; they are still in git history if a past layout idea is worth recovering. Rebuild each page from the client's v4 spec when its turn comes, and replace the whole `<PagePlaceholder>`. The client's spec is `MSK-Resilience_ข้อกำหนดการออกแบบการแสดงผล_5หน้า_v5.docx`, and its layout picture is the jpg in `public/file/271069/`.
+
+- **Built (2026-11-10):** all 6 pages. `PagePlaceholder` is no longer used by any route.
+- **หน้า 6 MCR2030 & KPI** (`Mcr2030KpiController`, owner-approved 2026-11-10). Two tabs (`?tab=kpi|mcr`); scope is ทั้งเมือง or a community (`?community=`); the fiscal-year filter works as on page 2.
+  - **KPI tab:** `App\Scoring\KpiCalculator` computes the **14** KPIs of spec §5.6, with 5 always better (Δ>0 is green).
+    - 10 come from assessment data.
+    - 3 (VULNERABLE / MEDICAL / ASSIST, the §5.9 percent KPIs) read `kpi_records`. They say "รอข้อมูล KPI" until it is imported.
+    - KPI_LOW_INCOME is "รอกำหนดสูตร" (unclear denominator; client question).
+    - KPI_C7 follows the spec formula as written: AVG(C7_1_FLOOD, C7_1_FIRE, C7_2), **no storm**, pending client confirmation.
+    - The %→0–5 band is the spec §5.7 "test default" and is labelled so.
+    - City level: score KPIs are population-weighted; percent KPIs pool Σnumerator/Σdenominator per group. City Δ only covers communities with both rounds.
+    - The previous round = engine `previousInputs` (each community as of the day before its newest data) + the kpi record on or before that cutoff. The engine result now also carries raw `inputs`, `previousInputs` and `previousCutoff`; controllers must never send `inputs` to the page wholesale.
+    - The KPI table that page 5's picture showed lives here.
+  - **MCR tab:** `App\Scoring\McrEvidence` encodes E1–E10 from `MCR2030_Alignment_Evidence_Community_v3.docx` as evidence topics. Each Essential is full / partial / none, with a generated "ระบบพบข้อมูลเกี่ยวกับ…" sentence. **Never a score** (doc note 4).
+    - RESPONSIBLE_AGENCY (E1) has **no import column**, so E1 is at most "มีบางส่วน". Don't invent it.
+    - C4_4 empty doesn't count against E6/E7 (`naOk`).
+    - Event-based topics come from the community's events up to the as-of date.
+    - City view = the count of communities per status, with chips for the topics found and missing.
+- **หน้า 1 (`AboutController`):** fixed text from spec §1.1–1.4; the only live facts are the latest data date (6 sheets + events), the community count and the criteria sets.
+  - **Data status** shows the 3 real states: ใช้คำนวณแล้ว / ไม่เกี่ยวข้อง (N/A) / ข้อมูลไม่ครบ. **Never "VERIFIED/รอตรวจสอบ"**, since there is no review step.
+  - The **หน่วยงานผู้พัฒนาระบบ block is left out until the owner supplies its content.** Don't invent it.
+  - **Header background:** the owner's `public/img/banner.png` (2172×724, 2.6 MB original), served as the GD-compressed **`public/img/banner.webp`** (274 KB). If the PNG is replaced, regenerate the webp.
+    - The banner already contains the municipality outline at its top right, so the page no longer draws one.
+    - It is shown with `bg-cover bg-[position:right_30%]` under a left-side blue gradient, with a slow zoom-in.
+  - **Owner wording (2026-11-10):** the h1 is **"ระบบข้อมูลเพื่อเมืองปลอดภัยและยืดหยุ่น"**. The owner tried the longer official name "ระบบบริหารข้อมูลความเสี่ยงและความเปราะบางของชุมชน" and reverted it because it was too long. That longer name stays in the sidebar brand. The "ระบบนี้คืออะไร" text is the owner's own, so keep it verbatim. The sidebar version label in `AdminLayout.vue` is **v1.0.0**.
+  - **Header size:** fixed 244 CSS px high on ≥768px with the one-line h1, 736–2256px wide.
+  - `components/admin/Reveal.vue` fades sections in on scroll.
+- **Each page's controller reads `App\Scoring\RiskEngine`.** Never compute scores in TS.
+- **Shared display helpers:** `resources/js/data/riskDisplay.ts` has the engine-keyed hazard labels/icons (FLOOD…PM25), the spec v5 risk levels (`levelOf()` mirrors `RiskLevel::of`), group labels and formatters. Don't use `hazardMeta.ts` for these pages, since its keys and level names are the old ones.
+- **Animation is required on every dashboard page** (owner, 2026-11-10: every chart, line or number that changes must move). Use `composables/useTween.ts` (`useTweened`/`useTweenedList`, which grows from 0 on load and eases to new values) and `components/admin/AnimatedNumber.vue` for numbers. `RiskGauge` and `BarChart` already tween internally. Progress bars use a CSS width transition after mount. Ranked lists use `<TransitionGroup name="rank">`. Always honor `prefers-reduced-motion`.
+  - **Every animation waits until its element is in view** (`composables/useInView.ts`). This is passed as the `active` arg of `useTweened*`, and charts use a threshold of 0.6. The owner couldn't see the bar chart grow because it finished below the fold.
+  - **A filter that doesn't change a chart's values** (like the hazard filter on the 5-hazard bar chart) still gets a visible response: `BarChart`'s `highlight` prop fades the other bars.
+  - **Filter bars on dashboard pages are sticky** (`sticky -top-4 lg:-top-6 -mx-4 lg:-mx-6 …`, which cancels `<main>`'s padding), so they stay reachable while scrolling.
+- **Engine types** live in `types/index.ts` (`CityRisk`, `CommunityRiskSummary`, …). `components/admin/RiskGauge.vue` is the 0–100 band gauge.
+
+**หน้า 2 ภาพรวมความเสี่ยง** (`RiskOverviewController`, owner-approved plan 2026-11-10):
+- **ช่วงข้อมูล:** a fiscal-year select. The latest year shows all data; an earlier year runs the engine as of 30 Sep of that year.
+- **เลือกภัย:** client-side, since every hazard is loaded.
+- **Cards:** city MULTI gauge with Δ; the dominant hazard; the count of communities ≥75 (for the selected hazard); exposed people (the selected hazard, or the dominant one under ภัยรวม); 3 vulnerable groups.
+- **HEVC 5-hazard bars** with Δ, plus a data-status block: date, N of 32, criteria set(s) used, and the previous-round date. A note appears if the previous round used another set.
+- **ความพร้อมของเมือง:** under ภัยรวม it shows C4/C5/C8 + the per-hazard C_RAW. For one hazard it shows C4, C5 (FLOOD/HEAT only), C6_h, C7_h, C8 and C_RAW. Never a cross-hazard C total.
+- **จุดที่ยังต้องปรับปรุง:** the 5 worst city values. For gaps (V_WARNING, V_INFRA) high is bad; for capacity, low is bad. They are shown as data, with no generated advice.
+- **Top 5 communities:** these link to `community-map?community=CODE`, which page 3 should honor.
+- **KPI block:** not built; it waits for the client's KPI data. The mini-map was replaced by the Top 5 → page 3 link.
+
+**หน้า 3 แผนที่รายชุมชน** (`CommunityMapController` + `pages/admin/CommunityMap.vue`, owner-approved 2026-11-10):
+- **Query string:** `?community=CODE&hazard=KEY` preselect (page 2's Top 5 links pass both), and the URL is kept in sync with `history.replaceState`. `?year` reloads from the server.
+- **Layers:** HEVC (the 4 risk bands), plus E, V and C on a 0–5 scale with `SCORE_PALETTE`. **Red always means bad**, so C (capacity) runs reversed. Under ภัยรวม, E/V/C use the city's dominant hazard.
+- **Missing and N/A:** a missing community is gray with a dashed outline (ข้อมูลไม่ครบ). A hazard N/A is light gray (ไม่เกี่ยวข้อง) and isn't ranked.
+- **Map behavior:** names (divIcon labels) show only at zoom ≥15; hover gives a sticky tooltip with the score. Clicking a community selects it, `flyToBounds` to it and thickens its outline. The map opens fitted to `MUNICIPALITY_BOUNDARY`.
+- **Map controls:** Esri gray/street/satellite toggle, a fullscreen toggle (`invalidateSize` after), and a scale bar. The attribution stays visible.
+- **Joins:** polygons come from `communityBoundaries.ts`, matched by local id → `mahasarakham.ts` `code` → DB code. A community without a polygon says so in the panel.
+- **Panel with nothing selected:** all 32 ranked, riskiest first (C ascends), via TransitionGroup.
+- **Panel with a community selected:**
+  - area facts, the score with Δ and level, and the dominant hazard;
+  - 5 hazard `ScoreBar`s;
+  - then, for the selected hazard (or the community's dominant one under ภัยรวม): E count/%, key groups, gaps (V_WARNING, V_INFRA_h), C4/C5*/C6_h/C7_h/C8 + C_RAW;
+  - response hours, RECOVERY_AVG, and a link to page 4 (`risk-factors?community=CODE`, which page 4 should honor).
+- **Animation (page 3):** polygon fills fade through the `.community-zone` CSS transition (Leaflet's path `className`). `components/admin/ScoreBar.vue` is the reusable tweened horizontal bar.
+
+**หน้า 4 ปัจจัยความเสี่ยง** (`RiskFactorsController` + `pages/admin/RiskFactors.vue`, owner-approved 2026-11-10):
+- **Scope:** ทั้งเมือง (population-weighted) by default, or one community. `?community=CODE&hazard=KEY` preselect; page 3's panel links here.
+- **Hazard tabs:** 5 tabs with no ภัยรวม, because E/V/C are per hazard. The default is the city's dominant hazard.
+- **E column:**
+  - the count, % and score. City E% is Σexposed ÷ Σpopulation, banded with `Bands::percent`.
+  - a Top 5 by E% across the city, with the selected community highlighted or shown by rank if it's outside the Top 5.
+- **V column:**
+  - V_h with Δ;
+  - all 9 vulnerable-group cards (count + % of population);
+  - gaps V_WARNING and V_INFRA_h with a Δ arrow (rise = bad);
+  - **ที่มาของคะแนน V**: each component × its weight from the set in use (`weights` prop: `v_hazard`/`c_hazard` of each set used). The ÷Σw re-normalization is noted when there's an N/A.
+- **C column:**
+  - C4, C5 (FLOOD/HEAT only), C6_h, C7_h and C8 with Δ (rise = good);
+  - a `ScoreRing` for C_RAW_h, with C_HEVC shown;
+  - **ที่มาของคะแนน C**.
+- **Left out on purpose:** the picture's ครัวเรือนเปิดรับภัย, พื้นที่เสี่ยง ตร.กม. and the drainage/building/safe-place gaps. They have **no input column**, so they're omitted, never invented. Add them only after the client adds columns to the import template.
+- **Engine support:** the city summary carries `groupDeltas` and per-hazard `vDelta`/`cRawDelta`.
+
+**หน้า 5 ผลกระทบและการฟื้นตัว** (`ImpactRecoveryController` + `pages/admin/ImpactRecovery.vue`, owner-approved 2026-11-10):
+- **Data:** all `disaster_events` are sent and filtered client-side, by the fiscal year of EVENT_START (default the latest with events, or ทั้งหมด), the primary hazard and the community. **One EVENT_ID is one community's record**: a city-wide episode appears as many rows (e.g. the 24 PM2.5 rows on 2025-01-20).
+- **Summary blocks:**
+  - **L&D:** sums, plus the average recovery days. These are real values, never a score (spec §5.2).
+  - **Finance:** F1 = F2+F3+F4+F5, recomputed when the parts exist. An imported F1 that disagrees is flagged. A share with F1 = 0 is N/A. The 3-year budget (each community's latest `m_budget_avg_3y`) is shown for context.
+  - **Recovery:** readiness vs observed, averaged over the events that have both. The gap is labelled neutrally as "ต่างจากความพร้อมที่ประเมินไว้", in blue, never green/red (spec §5.1).
+- **Readiness for an event:** the community's latest `disaster_records` row **on or before EVENT_START**. Both averages use the set resolved for the event's fiscal year (`HevcCalculator::recoveryReadiness()` / `recoveryObserved()`). With no earlier row: "ไม่มีข้อมูลความพร้อมก่อนเหตุ".
+- **Events table:** newest first; a row opens a detail modal (blue header) with the description, L&D, the finance bars and an R1–R5 before/after table.
+- **Left out:** the picture's people affected, schools, temples, clinics and farmland have no input column. The **KPI table moves to page 6** (owner).
+- **Test data note:** R*_OBSERVED currently equals R1–R5, so every gap is 0.0. Also, most events share a date with the first readiness rows, so they show "–" for readiness.
 
 **`นำเข้าข้อมูล`** (child of the `จัดการข้อมูล` module, `role:admin,staff`, `AppHttpControllersAdminDataImportController`). Rebuilt 2026-10-29 as a 2-step shell; the old v1 mock wizard is gone and still in git history.
 - **Step 1, `/data-import`** (`pages/admin/DataImport.vue`): pick the กลุ่มงาน from a card grid. The server sends **only the groups `User::canImport()` allows**: admin sees all 8, staff sees only the groups an admin granted. A staff user with no grants sees a "ยังไม่ได้รับสิทธิ์" empty state.
@@ -206,6 +293,8 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 
 `AdminLayout`'s `isActive()` also matches sub-paths, so นำเข้าข้อมูล stays highlighted (and its module open) on `/data-import/{group}`.
 
+**Admin header** (owner, 2026-11-10): the old mock bell (a hard-coded "6") and the date chip's dropdown arrow were removed; don't re-add an alert badge until there are real notifications. The search box is a real **community search**: `HandleInertiaRequests` shares `communityIndex` (code + name, logged-in users only), matching name or code (a typed "ชุมชน" prefix is ignored), with arrow keys/Enter, and opens `community-map?community=CODE`.
+
 **`จัดการเกณฑ์คะแนน`** (`/scoring-criteria`, `role:admin` only): **real, DB-backed since 2026-10-29**, built with the owner as the backend rebuild's 2nd menu. The code is `App\Scoring\CriteriaSchema`, `ScoringCriteriaController`, `ScoringCriteriaSetRequest`, model `ScoringCriteriaSet`, table `scoring_criteria_sets` (`name` unique, `start_fiscal_year` unique, `is_locked`, `weights` JSON), and `resources/js/pages/admin/ScoringCriteria.vue`. The page no longer touches the mock `criteriaList`.
 
 - **Structure:** it holds เกณฑ์กลาง = **weights only** from the client's `ค่าถ่วงน้ำหนัก.docx`: 112 weights in 15 sections across 8 tabs (ภัยรวม, รายภัย, V รายกลุ่ม, V รายภัย, C รายกลุ่ม, C6/C7 รายภัย, C รวมรายภัย, Recovery). `CriteriaSchema` is the **single source of truth** for that structure, the default values, the validation and the normalization. The page gets it as the `schema` prop, so never re-declare the structure in TS.
@@ -237,6 +326,7 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 - **`HevcCalculator`** is the pure formula: inputs + weights → hazards/multi/groups/recovery + `trace`, where `trace` holds every step's value and terms for a future "ดูวิธีคิด". `HevcCalculator::recoveryObserved()` handles events.
 - **Raw values converted to 0–5:** `Bands` converts E% and the V group % (count ÷ POPULATION), plus C4_1, C4_2, C6_3, C8_1 and C8_2, per ภาคผนวก B. Every other input is used as entered.
 - **Rounding:** `RiskLevel::of()` takes the band from the value rounded to 1 decimal.
+- **Previous round (Δ, owner 2026-11-10):** each community is also computed as of the day before its newest record used (`previous`). This way Δ shows only what the new data changed. City Δ is population-weighted over the communities that have both rounds (`delta`, `deltaCommunities`). `RiskEngine::fiscalYears()` and `fiscalYearEnd()` feed the year filter.
 - **Tests:** `tests/Feature/Scoring/RiskEngineTest.php` checks R001 against a hand calculation (FLOOD_HEVC 10.9273, MULTI 11.5482). With the current v4 test data every community comes out ต่ำ (about 9–20), because exposure is tiny (E≈1.6%) and capacity is high. That's the data, not a bug.
 
 staff/member don't see this menu at all (unlike the roadmap placeholders, which everyone sees grayed-out) — a future "which year's criteria to view" selector for them belongs as a read-only filter on the dashboard/reports, not a sidebar menu entry, per the earlier design discussion.
@@ -247,7 +337,23 @@ staff/member don't see this menu at all (unlike the roadmap placeholders, which 
 - §5.9 gives the KPI % formulas.
 - Where Appendix B and the importer differ, the owner settled it on 2026-11-06. C5_3, C8_3 and V_INFRA_GAP_* are 0–5 scores entered by staff and used as-is: no ÷10 for V_INFRA. Since 2026-11-10 the importer validates V_INFRA_GAP_* as SCORE, and the template comments say "ค่าที่กรอก: N/A,0,1,2,3,4,5". C6_3 is a % input, banded per Appendix B (0%=0, >0–20=1, >20–40=2, >40–60=3, >60–80=4, >80–100=5).
 
-**A "ตรวจสอบการคำนวณ" (calc-trace) menu is deferred** until after the 6 display pages (owner, 2026-11-03). When it's built, it must render a trace produced by the real calc engine, not a separate formula description. The TEMPORARY mock `/calc-preview` (`pages/admin/CalcPreview.vue` + 1 route + 1 nav entry, all marked ⚠️) is only a picture. Its bands are invented, so don't build on it.
+**"ดูวิธีคิด" calc trace (built 2026-11-10, admin only).** The owner chose a button over a separate menu.
+- **Where:** the trace button, labelled **"การคำนวณ"** (renamed from "ดูวิธีคิด" by the owner 2026-11-10), in page 3's community panel and on page 4 (community scope). On page 4 it sits right-aligned beside a separate **"ไปยังแผนที่"** button (renamed from the "ดูบนแผนที่" text link). It opens `components/admin/CalcTraceDialog.vue`.
+- **Data:** the dialog fetches `GET calc-trace/{code}?year=` (`CalcTraceController`, `role:admin`), which returns the engine's own `trace`. Every number shown is the one calculated, never a second description of the formula. The dialog shows:
+  - the input dates per sheet and the criteria set;
+  - raw → 0–5 conversions;
+  - the shared group sums;
+  - per-hazard V/C6/C7/C_RAW with weights and ÷Σw re-normalization;
+  - the HEVC formula with numbers;
+  - MULTI and RECOVERY.
+- **Mock removed:** the temporary `/calc-preview` mock (page, route and nav entry) was deleted in the same change.
+
+**Page 1 developer block (owner text, verbatim):** หน่วยปฏิบัติการวิจัยการเปลี่ยนแปลงสภาพภูมิอากาศ การบรรเทา และการปรับตัว (CMARE) · หัวหน้าโครงการ: ธายุกร พระบำรุง · ผู้พัฒนา: วงศ์นรินทร์ สุขวิชัย.
+- พระบำรุง uses the proper สระอำ (U+0E33). The owner typed นิคหิต+า, which looks the same but breaks search.
+- "หัวหน้าโครงการ" was the owner-approved title: the person owns the project, supplies the data and coordinates.
+- "สุขวิชัย" (ช) confirmed by the owner 2026-11-10 (an earlier "สุขวิขัย" was a typo).
+
+**Open client questions** are tracked in memory (`project_client_questions_2026_11_10`): KPI_C7 storm, the low-income KPI formula, the permanent KPI band, KPI descriptions, NEXT_REVIEW_DATE, KPI data, picture items with no input column, RESPONSIBLE_AGENCY, C verbal bands, confirming the design decisions, the V_INFRA owner, and whether the data is real.
 
 **HEVC data model, LEGACY (original xlsx template, superseded).** The bullets below describe the **first** workbook the owner supplied, and the mock pages built from it are deleted. The current source of truth is the v4 file set in `public/file/271069/`:
 - `data_input_mcr2030_v4.xlsx`: 8 input sheets, which are the 8 กลุ่มงาน.

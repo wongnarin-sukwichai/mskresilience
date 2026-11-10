@@ -137,6 +137,26 @@ class HevcCalculator
     }
 
     /**
+     * RECOVERY_AVG from one disaster_records row alone (R1–R5 readiness), with the given weights. Page 5 compares it
+     * with an event's RECOVERY_OBSERVED_AVG using the same set, so the two are comparable.
+     *
+     * @param  array<string, mixed>  $record  disaster_records columns
+     * @param  array<string, array<string, array<string, float>>>  $weights
+     */
+    public static function recoveryReadiness(array $record, array $weights): ?float
+    {
+        $calc = new self($record, $weights);
+
+        return $calc->weighted('RECOVERY_AVG', $weights['recovery']['ALL'], [
+            'R1' => $calc->number('r1_recovery_plan_score'),
+            'R2' => $calc->number('r2_build_back_better_score'),
+            'R3' => $calc->number('r3_socioeconomic_recov_score'),
+            'R4' => $calc->number('r4_vulner_group_recov_score'),
+            'R5' => $calc->number('r5_learning_sys_improv_score'),
+        ]);
+    }
+
+    /**
      * @param  array<string, float|int|null>  $groups
      * @param  array<string, float|int|null>  $c
      * @return array{hevc: float|null, level: string|null, e: int|null, ePercent: float|null, v: float|null, cRaw: float|null, cHevc: float|null}

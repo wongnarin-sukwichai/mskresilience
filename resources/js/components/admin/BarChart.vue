@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { useInView } from '@/composables/useInView';
+import { useTweenedList } from '@/composables/useTween';
+import { computed, ref } from 'vue';
 
 interface Bar {
     label: string;
@@ -7,10 +9,22 @@ interface Bar {
     color: string;
 }
 
-const props = defineProps<{
-    bars: Bar[];
-    max?: number;
-}>();
+const props = withDefaults(
+    defineProps<{
+        bars: Bar[];
+        max?: number;
+        /** Decimals for the value labels (also used while animating). */
+        decimals?: number;
+        /** Index of the bar to emphasise (the others fade back); null = all equal. */
+        highlight?: number | null;
+    }>(),
+    { max: undefined, decimals: 0, highlight: null },
+);
+
+// Bars grow from the baseline once scrolled into view and ease to new values (owner request 2026-11-10).
+const el = ref<HTMLElement | null>(null);
+const shown = useTweenedList(() => props.bars.map((b) => b.value), 1000, useInView(el, 0.6));
+const shownValue = (i: number) => shown.value[i] ?? 0;
 
 const WIDTH = 600;
 const HEIGHT = 220;
@@ -51,7 +65,7 @@ function xCenter(i: number) {
 </script>
 
 <template>
-    <div class="w-full">
+    <div ref="el" class="w-full">
         <svg :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" class="w-full">
             <line
                 v-for="tick in yTicks"
@@ -74,21 +88,39 @@ function xCenter(i: number) {
                 {{ tick }}
             </text>
 
-            <g v-for="(bar, i) in bars" :key="bar.label">
+            <g
+                v-for="(bar, i) in bars"
+                :key="bar.label"
+                :opacity="highlight === null || highlight === i ? 1 : 0.25"
+                style="transition: opacity 0.5s ease"
+            >
                 <rect
                     :x="barX(i)"
-                    :y="yPos(bar.value)"
+                    :y="yPos(shownValue(i))"
                     :width="barWidth"
-                    :height="Math.max(HEIGHT - PAD_BOTTOM - yPos(bar.value), 0)"
+                    :height="Math.max(HEIGHT - PAD_BOTTOM - yPos(shownValue(i)), 0)"
                     :fill="bar.color"
                     rx="4"
+                    :stroke="highlight === i ? '#334155' : 'transparent'"
+                    stroke-width="2"
+                    style="
+                        transition:
+                            fill 0.6s ease,
+                            stroke 0.5s ease;
+                    "
                 >
                     <title>{{ bar.label }}: {{ bar.value }}</title>
                 </rect>
-                <text :x="xCenter(i)" :y="yPos(bar.value) - 6" text-anchor="middle" class="fill-slate-600 text-[10px] font-semibold">
-                    {{ bar.value }}
+                <text :x="xCenter(i)" :y="yPos(shownValue(i)) - 6" text-anchor="middle" class="fill-slate-600 text-[10px] font-semibold">
+                    {{ shownValue(i).toFixed(decimals) }}
                 </text>
-                <text :x="xCenter(i)" :y="HEIGHT - 6" text-anchor="middle" class="fill-slate-400 text-[9px]">
+                <text
+                    :x="xCenter(i)"
+                    :y="HEIGHT - 6"
+                    text-anchor="middle"
+                    class="text-[9px]"
+                    :class="highlight === i ? 'fill-slate-800 font-bold' : 'fill-slate-400'"
+                >
                     {{ bar.label }}
                 </text>
             </g>

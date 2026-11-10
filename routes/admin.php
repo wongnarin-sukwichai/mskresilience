@@ -1,13 +1,19 @@
 <?php
 
+use App\Http\Controllers\Admin\AboutController;
+use App\Http\Controllers\Admin\CalcTraceController;
 use App\Http\Controllers\Admin\CommunityManagementController;
+use App\Http\Controllers\Admin\CommunityMapController;
 use App\Http\Controllers\Admin\DataImportController;
+use App\Http\Controllers\Admin\ImpactRecoveryController;
 use App\Http\Controllers\Admin\ImportBatchManagementController;
 use App\Http\Controllers\Admin\ImportHistoryController;
+use App\Http\Controllers\Admin\Mcr2030KpiController;
+use App\Http\Controllers\Admin\RiskFactorsController;
+use App\Http\Controllers\Admin\RiskOverviewController;
 use App\Http\Controllers\Admin\ScoringCriteriaController;
 use App\Http\Controllers\Admin\UserManagementController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // The 6 display pages (reset to empty placeholders 2026-10-29, rebuilt one at a time per the client's 5-page
@@ -15,12 +21,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // admin+staff, ตั้งค่าระบบ is admin. 'dashboard' stays the route name and URL for เกี่ยวกับระบบ because the
     // post-login and guest redirects target route('dashboard').
     Route::middleware('role:admin,staff,member')->group(function () {
-        Route::get('dashboard', fn () => Inertia::render('admin/About'))->name('dashboard');
-        Route::get('risk-overview', fn () => Inertia::render('admin/RiskOverview'))->name('risk-overview.index');
-        Route::get('community-map', fn () => Inertia::render('admin/CommunityMap'))->name('community-map.index');
-        Route::get('risk-factors', fn () => Inertia::render('admin/RiskFactors'))->name('risk-factors.index');
-        Route::get('impact-recovery', fn () => Inertia::render('admin/ImpactRecovery'))->name('impact-recovery.index');
-        Route::get('mcr2030-kpi', fn () => Inertia::render('admin/Mcr2030Kpi'))->name('mcr2030-kpi.index');
+        Route::get('dashboard', [AboutController::class, 'index'])->name('dashboard');
+        Route::get('risk-overview', [RiskOverviewController::class, 'index'])->name('risk-overview.index');
+        Route::get('community-map', [CommunityMapController::class, 'index'])->name('community-map.index');
+        Route::get('risk-factors', [RiskFactorsController::class, 'index'])->name('risk-factors.index');
+        Route::get('impact-recovery', [ImpactRecoveryController::class, 'index'])->name('impact-recovery.index');
+        Route::get('mcr2030-kpi', [Mcr2030KpiController::class, 'index'])->name('mcr2030-kpi.index');
     });
 
     // จัดการข้อมูล module — admin and staff. Per-sheet (กลุ่มงาน) import permission comes from
@@ -47,9 +53,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::resource('communities', CommunityManagementController::class)->except(['create', 'edit', 'show']);
 
-        // ⚠️ TEMPORARY mock page (2026-11-03) so the owner can picture a "ตรวจสอบการคำนวณ" menu. Delete together with
-        // pages/admin/CalcPreview.vue and its AdminLayout nav entry.
-        Route::get('calc-preview', fn () => Inertia::render('admin/CalcPreview'))->name('calc-preview');
+        // "ดูวิธีคิด": one community's real engine trace as JSON, for the dialog on pages 3/4 (admin only, owner
+        // 2026-11-10). It replaced the temporary /calc-preview mock menu.
+        Route::get('calc-trace/{code}', [CalcTraceController::class, 'show'])->name('calc-trace.show');
 
         // จัดการประวัตินำเข้า: every import, searchable. Cancelling posts to import-history.cancel.
         Route::get('import-batches', [ImportBatchManagementController::class, 'index'])->name('import-batches.index');

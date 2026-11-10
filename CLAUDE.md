@@ -226,7 +226,18 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
   - Existing sets were migrated to start 2568 (the earliest data, Jan 2025). The seeder also uses 2568.
 - **Settled engine rules (owner 2026-11-06):** no per-hazard E/V/C weights, ever (one set: 0.3846/0.6154/0.16). R*_OBSERVED uses the same Recovery weights as R1–R5. HEVC max is ~84, which is accepted (Q6 = ก): no rescale, `C_HEVC = 1 + 0.8·C_RAW` and the bands 0–24/25–49/50–74/75–100 stay. No cross-hazard V or C totals; the rollup happens only at MULTI_HAZARD_HEVC. The data round is the latest record per sheet per community.
 - **Still to build:** when comparing rounds, the UI shows which set each side used, and an executive can recompute both sides with one chosen set as a read-only what-if.
-- **No consumers yet:** the calc engine isn't built. It must pick each record's set through `CriteriaSets::resolve()`.
+- **Consumer:** the calc engine (below) picks each community's set through `CriteriaSets::resolve()`.
+
+**Calc engine** (`app/Scoring/`, built 2026-11-10, no UI yet; the 6 display pages will read it). Its rules (owner, 2026-11-10):
+- **It computes live on every call.** There is no stored results table, because there are only 32 communities and live results make the what-if simple. `RiskEngine::run(?asOf, ?override)` returns `communities[]`, the `city` summary, and `asOf`.
+  - **Data round:** each community's latest record per sheet, dated on or before `asOf`. Comparing with the previous round means running again with an earlier `asOf`; what "รอบก่อน" means gets decided with page 2.
+  - **Criteria set:** chosen by the fiscal year of the community's newest record used. `override` applies one set to everyone, for the what-if.
+- **Missing vs N/A:** a community with no record in any of the 6 sheets (`RiskEngine::SHEETS`; events/KPI aren't in HEVC) is `status: missing`. It gets no scores, and the UI should show it gray as ข้อมูลไม่ครบ. An empty cell inside a record is N/A: that term is dropped and the rest re-normalized (spec §4.6). A hazard whose E, V or C is N/A is N/A, and MULTI re-normalizes over the remaining hazards (spec §2.4).
+- **City level:** a population-weighted average over the communities that have a value. It carries a `communities` count, so the UI can say "คำนวณจาก N จาก 32 ชุมชน".
+- **`HevcCalculator`** is the pure formula: inputs + weights → hazards/multi/groups/recovery + `trace`, where `trace` holds every step's value and terms for a future "ดูวิธีคิด". `HevcCalculator::recoveryObserved()` handles events.
+- **Raw values converted to 0–5:** `Bands` converts E% and the V group % (count ÷ POPULATION), plus C4_1, C4_2, C6_3, C8_1 and C8_2, per ภาคผนวก B. Every other input is used as entered.
+- **Rounding:** `RiskLevel::of()` takes the band from the value rounded to 1 decimal.
+- **Tests:** `tests/Feature/Scoring/RiskEngineTest.php` checks R001 against a hand calculation (FLOOD_HEVC 10.9273, MULTI 11.5482). With the current v4 test data every community comes out ต่ำ (about 9–20), because exposure is tiny (E≈1.6%) and capacity is high. That's the data, not a bug.
 
 staff/member don't see this menu at all (unlike the roadmap placeholders, which everyone sees grayed-out) — a future "which year's criteria to view" selector for them belongs as a read-only filter on the dashboard/reports, not a sidebar menu entry, per the earlier design discussion.
 

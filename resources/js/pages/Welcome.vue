@@ -1,17 +1,35 @@
 <script setup lang="ts">
+import AnimatedNumber from '@/components/admin/AnimatedNumber.vue';
 import { communityZones } from '@/data/communityZones';
-import { hazardIcons } from '@/data/hazardMeta';
-import { MAP_CENTER, MAP_ZOOM, MUNICIPALITY_BOUNDARY, communities, riskColors, riskNameTH, type Community } from '@/data/mahasarakham';
-import { fadeInGroup, fadeOutGroup } from '@/lib/leafletFade';
-import type { SharedData } from '@/types';
+import { MAP_CENTER, MAP_ZOOM, MUNICIPALITY_BOUNDARY, communities } from '@/data/mahasarakham';
+import { HAZARD_KEYS, RISK_LEVEL_KEYS, formatScore, formatThaiDate, hazardLabel, riskLevels } from '@/data/riskDisplay';
+import type { HazardKey, RiskLevelKey, SharedData } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import L from 'leaflet';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
+// Live risk from RiskEngine (WelcomeController). Public page: scores and levels only, no inputs.
+interface ScoreLevel {
+    hevc: number | null;
+    level: RiskLevelKey | null;
+}
+interface PublicCommunityRisk {
+    code: string;
+    status: 'ok' | 'missing';
+    dataDate: string | null;
+    multi: (ScoreLevel & { dominant: HazardKey | null }) | null;
+    hazards: Record<HazardKey, ScoreLevel> | null;
+}
+interface PublicRisk {
+    dataDate: string | null;
+    city: ScoreLevel & { dominant: HazardKey | null; communities: number };
+    communities: PublicCommunityRisk[];
+}
+
 // Authenticated-state header chip — without this, the page showed a generic "เข้าสู่ระบบ" button no matter
 // who was logged in, so there was no way to see you were signed in as a different account, or to log out.
 const page = usePage<SharedData>();
-const props = defineProps<{ openLogin?: boolean }>();
+const props = defineProps<{ openLogin?: boolean; risk: PublicRisk | null }>();
 const authUser = computed(() => page.props.auth.user);
 const canAccessAdminPanel = computed(() => !!authUser.value && ['admin', 'staff'].includes(authUser.value.role));
 const userMenuOpen = ref(false);
@@ -23,10 +41,11 @@ function handleUserMenuClickOutside(event: MouseEvent) {
     }
 }
 
+type Filter = 'MULTI' | HazardKey;
+
 interface RiskFilter {
-    value: 'all' | 'flood' | 'fire' | 'wind' | 'heat' | 'pm25';
+    value: Filter;
     label: string;
-    sub?: string;
     icon: string;
     iconBg: string;
     iconColor: string;
@@ -36,8 +55,8 @@ interface RiskFilter {
 
 const riskFilters: RiskFilter[] = [
     {
-        value: 'all',
-        label: 'แสดงทั้งหมด',
+        value: 'MULTI',
+        label: 'ความเสี่ยงรวม (ทุกภัย)',
         icon: 'fa-solid fa-layer-group',
         iconBg: 'bg-slate-200',
         iconColor: 'text-slate-600',
@@ -45,8 +64,8 @@ const riskFilters: RiskFilter[] = [
         accentClass: 'text-slate-600 focus:ring-slate-500',
     },
     {
-        value: 'flood',
-        label: 'อุทกภัย',
+        value: 'FLOOD',
+        label: hazardLabel.FLOOD,
         icon: 'fa-solid fa-water',
         iconBg: 'bg-blue-100',
         iconColor: 'text-blue-600',
@@ -54,8 +73,8 @@ const riskFilters: RiskFilter[] = [
         accentClass: 'text-blue-600 focus:ring-blue-500 accent-blue-600',
     },
     {
-        value: 'fire',
-        label: 'อัคคีภัย',
+        value: 'FIRE',
+        label: hazardLabel.FIRE,
         icon: 'fa-solid fa-fire',
         iconBg: 'bg-red-100',
         iconColor: 'text-red-600',
@@ -63,8 +82,8 @@ const riskFilters: RiskFilter[] = [
         accentClass: 'text-red-600 focus:ring-red-500 accent-red-500',
     },
     {
-        value: 'wind',
-        label: 'วาตภัย',
+        value: 'STORM',
+        label: hazardLabel.STORM,
         icon: 'fa-solid fa-wind',
         iconBg: 'bg-teal-100',
         iconColor: 'text-teal-600',
@@ -72,8 +91,8 @@ const riskFilters: RiskFilter[] = [
         accentClass: 'text-teal-600 focus:ring-teal-500 accent-teal-600',
     },
     {
-        value: 'heat',
-        label: 'คลื่นความร้อน',
+        value: 'HEAT',
+        label: hazardLabel.HEAT,
         icon: 'fa-solid fa-temperature-arrow-up',
         iconBg: 'bg-orange-100',
         iconColor: 'text-orange-600',
@@ -81,9 +100,8 @@ const riskFilters: RiskFilter[] = [
         accentClass: 'text-orange-600 focus:ring-orange-500 accent-orange-500',
     },
     {
-        value: 'pm25',
-        label: 'PM 2.5',
-        sub: 'เฝ้าระวัง',
+        value: 'PM25',
+        label: hazardLabel.PM25,
         icon: 'fa-solid fa-smog',
         iconBg: 'bg-purple-100',
         iconColor: 'text-purple-600',
@@ -92,12 +110,67 @@ const riskFilters: RiskFilter[] = [
     },
 ];
 
-// Quick stats derived from community data
-const floodCount = computed(() => communities.filter((c) => c.activeRisk === 'flood').length);
-const fireCount = computed(() => communities.filter((c) => c.activeRisk === 'fire').length);
-const windCount = computed(() => communities.filter((c) => c.activeRisk === 'wind').length);
-const avgHeatC = 38;
-const avgPm25 = 68;
+// ---------------------------------------------------------------------------------------------------------------
+// Risk per community for the selected filter. A community with no engine row (or status missing) is ข้อมูลไม่ครบ
+// (gray); a hazard whose score is N/A is ไม่เกี่ยวข้อง (light gray). Same rules as page 3.
+// ---------------------------------------------------------------------------------------------------------------
+const MISSING_COLOR = '#94a3b8';
+const NA_COLOR = '#e2e8f0';
+
+const riskByCode = computed(() => new Map((props.risk?.communities ?? []).map((c) => [c.code, c])));
+const selectedRisk = ref<Filter>('MULTI');
+const selectedFilter = computed(() => riskFilters.find((f) => f.value === selectedRisk.value)!);
+
+type CommunityScore = { state: 'ok'; hevc: number; level: RiskLevelKey } | { state: 'na' | 'missing'; hevc: null; level: null };
+
+function scoreOf(code: string, filter: Filter = selectedRisk.value): CommunityScore {
+    const risk = riskByCode.value.get(code);
+    if (!risk || risk.status === 'missing') return { state: 'missing', hevc: null, level: null };
+    const score = filter === 'MULTI' ? risk.multi : risk.hazards?.[filter];
+    if (!score || score.hevc === null || !score.level) return { state: 'na', hevc: null, level: null };
+    return { state: 'ok', hevc: score.hevc, level: score.level };
+}
+
+function colorOf(score: CommunityScore): string {
+    if (score.state === 'ok') return riskLevels[score.level].color;
+    return score.state === 'na' ? NA_COLOR : MISSING_COLOR;
+}
+
+// White text except on the light fills (yellow band, N/A), where it would be unreadable.
+function textColorOf(score: CommunityScore): string {
+    return score.level === 'moderate' || score.state === 'na' ? '#1e293b' : '#ffffff';
+}
+
+function statusText(score: CommunityScore): string {
+    if (score.state === 'ok') return `${riskLevels[score.level].label} (${formatScore(score.hevc)})`;
+    return score.state === 'na' ? 'ไม่เกี่ยวข้อง' : 'ข้อมูลไม่ครบ';
+}
+
+// Bottom cards: how many communities fall in each risk band for the selected filter (also the map legend).
+const levelCounts = computed(() => {
+    const counts: Record<RiskLevelKey | 'na' | 'missing', number> = { low: 0, moderate: 0, high: 0, very_high: 0, na: 0, missing: 0 };
+    for (const com of communities) {
+        const score = scoreOf(com.code);
+        counts[score.state === 'ok' ? score.level : score.state]++;
+    }
+    return counts;
+});
+
+// Sidebar filter list: in how many communities each hazard is the dominant one (highest HEVC).
+const dominantCounts = computed(() => {
+    const counts = Object.fromEntries(HAZARD_KEYS.map((h) => [h, 0])) as Record<HazardKey, number>;
+    for (const risk of props.risk?.communities ?? []) {
+        if (risk.multi?.dominant) counts[risk.multi.dominant]++;
+    }
+    return counts;
+});
+
+// Sidebar community list, riskiest first for the selected filter; no-score communities go last.
+const rankedCommunities = computed(() =>
+    communities
+        .map((com) => ({ ...com, shortName: com.name.replace('ชุมชน', ''), score: scoreOf(com.code) }))
+        .sort((a, b) => (b.score.hevc ?? -1) - (a.score.hevc ?? -1)),
+);
 
 // Top bar state
 const currentDateText = ref('กำลังโหลดข้อมูล...');
@@ -138,34 +211,19 @@ function setMapStyle(style: 'satellite' | 'color' | 'gray') {
     mapStyle.value = style;
 }
 
-// Risk filter state
-const selectedRisk = ref<RiskFilter['value']>('all');
+// Changing the filter recolors every community (zones fade through the .community-zone CSS transition).
+watch(selectedRisk, () => restyle());
 
-function applyRiskFilter() {
-    if (!map) return;
-    const shouldShow = (key: Community['activeRisk']) => selectedRisk.value === 'all' || key === selectedRisk.value;
-
-    (Object.keys(markersGroup) as Community['activeRisk'][]).forEach((key) => {
-        const group = markersGroup[key];
-        if (!group) return;
-        const isShown = map!.hasLayer(group);
-        const wantShown = shouldShow(key);
-        if (wantShown && !isShown) {
-            fadeInGroup(group, map!);
-        } else if (!wantShown && isShown) {
-            fadeOutGroup(group, map!, () => !shouldShow(key));
-        }
-    });
-}
-
-watch(selectedRisk, () => applyRiskFilter());
-
-function focusMap(lat: number, lng: number) {
+function focusMap(code: string, lat: number, lng: number) {
     map?.flyTo([lat, lng], 16, { animate: true, duration: 1.5 });
+    map?.once('moveend', () => markers.get(code)?.openPopup());
 }
 
 // Sidebar expand/collapse state
 const sidebarExpanded = ref(false);
+
+// Colour key: open on desktop, collapsed on phones (it would cover most of the map), one tap to open.
+const legendOpen = ref(typeof window === 'undefined' || window.innerWidth >= 768);
 
 function activateSidebar() {
     if (sidebarExpanded.value) return;
@@ -262,7 +320,59 @@ let map: L.Map | null = null;
 let satelliteTileLayer: L.TileLayer;
 let colorTileLayer: L.TileLayer;
 let grayTileLayer: L.TileLayer;
-let markersGroup: Record<Community['activeRisk'], L.FeatureGroup> = {} as Record<Community['activeRisk'], L.FeatureGroup>;
+const zones = new Map<string, L.Polygon>();
+const markers = new Map<string, L.Marker>();
+
+function popupHtml(code: string): string {
+    const com = communities.find((c) => c.code === code)!;
+    const risk = riskByCode.value.get(code);
+    const score = scoreOf(code);
+    const color = colorOf(score);
+    const dominant = risk?.multi?.dominant;
+    const scoreLine =
+        score.state === 'ok'
+            ? `<div class="mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold" style="background-color: ${color}22; color: ${score.level === 'moderate' ? '#a16207' : color}">
+                   <span class="h-2 w-2 rounded-full" style="background-color: ${color}"></span>${riskLevels[score.level].label} · ${formatScore(score.hevc)} / 100
+               </div>`
+            : `<div class="mt-2 inline-block rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">${statusText(score)}</div>`;
+    return `
+        <div class="font-sans min-w-[170px] text-center pb-1">
+            <h4 class="font-bold text-slate-800 text-sm mb-0.5">${com.name}</h4>
+            <p class="text-[11px] text-slate-500">${selectedFilter.value.label}</p>
+            ${scoreLine}
+            ${dominant ? `<p class="mt-2 text-[11px] text-slate-600">ภัยเด่นของชุมชน: <b>${hazardLabel[dominant]}</b></p>` : ''}
+            ${risk?.dataDate ? `<p class="mt-0.5 text-[10px] text-slate-400">ข้อมูล ณ ${formatThaiDate(risk.dataDate)}</p>` : ''}
+        </div>
+    `;
+}
+
+// Rounded name tag in the community's level color. The name reads in full (wraps to 2 lines if long).
+function markerIcon(code: string): L.DivIcon {
+    const score = scoreOf(code);
+    const name = communities.find((c) => c.code === code)!.name.replace('ชุมชน', '');
+    return L.divIcon({
+        className: '',
+        html: `
+            <div style="background-color: ${colorOf(score)}; color: ${textColorOf(score)}; border: 2px solid #ffffff; border-radius: 10px; padding: 5px 9px; max-width: 92px; font-size: 11px; font-family: 'Anuphan', sans-serif; font-weight: 600; text-align: center; line-height: 1.15; word-break: break-word; box-shadow: 0 4px 12px rgba(0,0,0,0.18); transition: all 0.3s ease;" class="cursor-pointer hover:scale-110">
+                ${name}
+            </div>
+        `,
+        iconSize: [100, 40],
+        iconAnchor: [50, 20],
+        popupAnchor: [0, -20],
+    });
+}
+
+function restyle() {
+    for (const [code, zone] of zones) {
+        const color = colorOf(scoreOf(code));
+        zone.setStyle({ color, fillColor: color, fillOpacity: 0.35 });
+    }
+    for (const [code, marker] of markers) {
+        marker.setIcon(markerIcon(code));
+        if (marker.isPopupOpen()) marker.setPopupContent(popupHtml(code));
+    }
+}
 
 function initMap() {
     if (!mapEl.value) return;
@@ -303,68 +413,32 @@ function initMap() {
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    markersGroup = {
-        flood: L.featureGroup().addTo(map),
-        fire: L.featureGroup().addTo(map),
-        wind: L.featureGroup().addTo(map),
-        heat: L.featureGroup().addTo(map),
-        pm25: L.featureGroup().addTo(map),
-        none: L.featureGroup().addTo(map),
-    };
-
     const zoneById = new Map(communityZones.map((z) => [z.id, z]));
 
     communities.forEach((com) => {
-        const fillColor = riskColors[com.activeRisk];
-        const isRisky = com.activeRisk !== 'none';
-        const shortName = com.name.replace('ชุมชน', '');
-
-        const badgeHtml = isRisky
-            ? `<span class="inline-block px-2 py-1 text-[10px] font-semibold rounded bg-slate-100 border mt-2" style="color: ${fillColor}; border-color: ${fillColor}">ความเสี่ยงปัจจุบัน: ${riskNameTH[com.activeRisk]}</span>`
-            : `<span class="inline-block px-2 py-1 text-[10px] font-semibold rounded bg-slate-100 border border-slate-300 text-slate-500 mt-2">สถานะปกติ</span>`;
-
-        const popupHtml = `
-            <div class="font-sans min-w-[150px] text-center pb-1">
-                <h4 class="font-bold text-slate-800 text-sm mb-0.5">${com.name}</h4>
-                <p class="text-xs text-slate-500">อ.เมือง จ.มหาสารคาม</p>
-                ${badgeHtml}
-            </div>
-        `;
-
-        // Zone fill — real ชุมชน boundary, see data/communityZones.ts for provenance.
+        // Zone fill — real ชุมชน boundary, see data/communityZones.ts for provenance. Starts neutral; restyle()
+        // right after mount fades in the level colors (CSS transition on .community-zone).
         const zone = zoneById.get(com.id);
         if (zone && zone.polygon.length > 0) {
             const zonePolygon = L.polygon(zone.polygon, {
-                color: fillColor,
+                className: 'community-zone',
+                color: NA_COLOR,
                 weight: 1.5,
-                fillColor,
-                fillOpacity: 0.3,
+                fillColor: NA_COLOR,
+                fillOpacity: 0.1,
             });
-            zonePolygon.bindPopup(popupHtml);
-            markersGroup[com.activeRisk]?.addLayer(zonePolygon);
+            zonePolygon.bindPopup(() => popupHtml(com.code));
+            zonePolygon.addTo(map!);
+            zones.set(com.code, zonePolygon);
         }
 
-        // Rounded-name-tag style (replaces the old plain circle) — the community name reads in full
-        // (wraps to 2 lines if long) instead of a single-line abbreviation crammed into a circle.
-        // Homepage-only per product decision — the admin Dashboard.vue map keeps its numbered-circle
-        // style, so don't copy this over there.
-        const customIcon = L.divIcon({
-            className: '',
-            html: `
-                <div style="background-color: ${fillColor}; color: #ffffff; border: 2px solid #ffffff; border-radius: 10px; padding: 5px 9px; max-width: 92px; font-size: 11px; font-family: 'Anuphan', sans-serif; font-weight: 600; text-align: center; line-height: 1.15; word-break: break-word; box-shadow: 0 4px 12px rgba(0,0,0,0.18); transition: all 0.3s ease;" class="cursor-pointer hover:scale-110">
-                    ${shortName}
-                </div>
-            `,
-            iconSize: [100, 40],
-            iconAnchor: [50, 20],
-            popupAnchor: [0, -20],
-        });
-
-        const marker = L.marker([com.lat, com.lng], { icon: customIcon });
-        marker.bindPopup(popupHtml);
-
-        markersGroup[com.activeRisk]?.addLayer(marker);
+        const marker = L.marker([com.lat, com.lng], { icon: markerIcon(com.code) });
+        marker.bindPopup(() => popupHtml(com.code));
+        marker.addTo(map!);
+        markers.set(com.code, marker);
     });
+
+    setTimeout(restyle, 150);
 }
 
 onMounted(() => {
@@ -388,6 +462,8 @@ onUnmounted(() => {
     document.removeEventListener('click', handleUserMenuClickOutside);
     map?.remove();
     map = null;
+    zones.clear();
+    markers.clear();
 });
 </script>
 
@@ -525,7 +601,7 @@ onUnmounted(() => {
                 <div class="h-px w-4 bg-slate-200"></div>
 
                 <div
-                    v-for="rf in riskFilters.filter((r) => r.value !== 'all')"
+                    v-for="rf in riskFilters.filter((r) => r.value !== 'MULTI')"
                     :key="rf.value"
                     class="flex h-8 w-8 items-center justify-center rounded-md"
                     :class="[rf.iconBg.replace('100', '50'), rf.iconColor.replace('600', '500')]"
@@ -539,7 +615,7 @@ onUnmounted(() => {
             <div v-if="sidebarExpanded" class="custom-scrollbar flex-1 overflow-y-auto p-4">
                 <!-- SECTION 1: Risks -->
                 <div class="mb-6">
-                    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">ประเภทความเสี่ยง (Risks)</h3>
+                    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">เลือกภัย (ระบายสีตามระดับความเสี่ยง)</h3>
                     <div class="grid grid-cols-1 gap-2">
                         <label
                             v-for="rf in riskFilters"
@@ -555,7 +631,12 @@ onUnmounted(() => {
                             </div>
                             <div class="flex-1">
                                 <span class="text-sm font-medium text-slate-700">{{ rf.label }}</span>
-                                <span v-if="rf.sub" class="block text-[10px] font-semibold text-red-500">{{ rf.sub }}</span>
+                                <span v-if="rf.value === 'MULTI' && risk?.city.level" class="block text-[10px] text-slate-500">
+                                    ภาพรวมเมือง: {{ riskLevels[risk.city.level].label }} ({{ formatScore(risk.city.hevc) }})
+                                </span>
+                                <span v-else-if="rf.value !== 'MULTI' && risk" class="block text-[10px] text-slate-500">
+                                    เป็นภัยเด่นของ {{ dominantCounts[rf.value] }} ชุมชน
+                                </span>
                             </div>
                             <input
                                 type="radio"
@@ -571,109 +652,97 @@ onUnmounted(() => {
 
                 <!-- SECTION 2: Communities List -->
                 <div>
-                    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">พื้นที่ 32 ชุมชน (เทศบาลเมืองมหาสารคาม)</h3>
-                    <ul class="relative z-20 space-y-1">
+                    <h3 class="mb-1 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        {{ communities.length }} ชุมชน เรียงจากเสี่ยงมากไปน้อย
+                    </h3>
+                    <p class="mb-3 text-[11px] text-slate-400">{{ selectedFilter.label }} · คะแนน 0–100 · คลิกเพื่อดูบนแผนที่</p>
+                    <TransitionGroup name="rank" tag="ul" class="relative z-20 space-y-1">
                         <li
-                            v-for="(com, index) in communities"
-                            :key="com.id"
+                            v-for="(com, index) in rankedCommunities"
+                            :key="com.code"
                             class="group/list flex cursor-pointer items-center justify-between rounded border border-transparent p-2 text-sm transition-colors hover:border-slate-100 hover:bg-slate-50"
-                            @click.stop="focusMap(com.lat, com.lng)"
+                            @click.stop="focusMap(com.code, com.lat, com.lng)"
                         >
-                            <div class="flex items-center">
-                                <span class="w-4 text-xs text-slate-400">{{ index + 1 }}.</span>
-                                <span class="ml-2 text-slate-700 transition-colors group-hover/list:text-blue-600">{{ com.name }}</span>
+                            <div class="flex min-w-0 items-center">
+                                <span class="w-5 shrink-0 text-xs text-slate-400">{{ index + 1 }}.</span>
+                                <span class="ml-1 truncate text-slate-700 transition-colors group-hover/list:text-blue-600">{{ com.shortName }}</span>
                             </div>
                             <span
-                                class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-                                :style="{ backgroundColor: riskColors[com.activeRisk] + '1a', color: riskColors[com.activeRisk] }"
-                                :title="riskNameTH[com.activeRisk]"
+                                class="ml-2 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
+                                :style="{ backgroundColor: colorOf(com.score), color: textColorOf(com.score) }"
+                                :title="statusText(com.score)"
                             >
-                                <i :class="[hazardIcons[com.activeRisk], 'text-[9px]']"></i>
+                                {{ com.score.state === 'ok' ? formatScore(com.score.hevc) : com.score.state === 'na' ? 'N/A' : '–' }}
                             </span>
                         </li>
-                    </ul>
+                    </TransitionGroup>
                 </div>
             </div>
         </aside>
 
-        <!-- Quick Stats Overlay -->
+        <!-- Colour key (owner 2026-11-10: every colour comparison needs one). Top right under the zoom buttons,
+             shown at every screen size (the bottom cards are desktop-only). -->
+        <div
+            class="fixed right-4 top-[10.5rem] z-[40] rounded-xl border border-slate-100 bg-white/90 text-[11px] shadow-lg backdrop-blur-md"
+            :class="legendOpen ? 'w-60 p-3' : 'px-3 py-2'"
+        >
+            <button type="button" class="flex w-full items-center gap-2 text-left" :aria-expanded="legendOpen" @click="legendOpen = !legendOpen">
+                <i class="fa-solid fa-palette text-slate-400"></i>
+                <span class="flex-1 font-semibold text-slate-700">{{ legendOpen ? 'ระดับความเสี่ยง (คะแนน 0–100)' : 'คำอธิบายสี' }}</span>
+                <i class="fa-solid text-[10px] text-slate-400" :class="legendOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </button>
+            <template v-if="legendOpen">
+                <p class="mb-2 text-[10px] text-slate-400">{{ selectedFilter.label }}</p>
+                <ul class="space-y-1 text-slate-600">
+                    <li v-for="k in RISK_LEVEL_KEYS" :key="k" class="flex items-center gap-2">
+                        <span class="h-3 w-4 shrink-0 rounded-sm" :style="{ background: riskLevels[k].color }"></span>
+                        <span class="flex-1">{{ riskLevels[k].label }}</span>
+                        <span class="tabular-nums text-slate-400">{{ riskLevels[k].range }}</span>
+                    </li>
+                </ul>
+            </template>
+        </div>
+
+        <!-- Quick Stats Overlay: how many communities fall in each risk band for the selected hazard. It is also the
+             map legend. The last card says how fresh the data is and how many communities could be scored. -->
         <div
             class="duration-400 pointer-events-none fixed bottom-6 right-6 z-[40] hidden flex-nowrap justify-end gap-2 transition-all ease-in-out lg:flex xl:gap-3"
             :class="sidebarExpanded ? 'left-[22rem]' : 'left-[5rem]'"
         >
             <div
-                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
+                v-for="key in RISK_LEVEL_KEYS"
+                :key="key"
+                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default overflow-hidden rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
+                :style="{ borderTop: `4px solid ${riskLevels[key].color}` }"
             >
-                <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />อุทกภัย</p>
+                <div class="mb-2 flex items-start justify-between gap-2">
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">
+                        ความเสี่ยง<br /><span class="font-semibold text-slate-700">{{ riskLevels[key].label }}</span>
+                    </p>
+                    <span class="shrink-0 text-[10px] text-slate-400">{{ riskLevels[key].range }}</span>
+                </div>
+                <div class="flex items-baseline gap-1.5">
+                    <span class="text-xl font-bold text-slate-800 xl:text-2xl"><AnimatedNumber :value="levelCounts[key]" /></span>
+                    <span class="text-[10px] text-slate-500 xl:text-xs">ชุมชน</span>
+                </div>
+            </div>
+
+            <div
+                class="pointer-events-auto min-w-[150px] max-w-[200px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md xl:p-4"
+            >
+                <div class="mb-2 flex items-start justify-between gap-2">
+                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">ข้อมูลล่าสุด<br />{{ selectedFilter.label }}</p>
                     <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-blue-50 text-blue-600">
-                        <i class="fa-solid fa-water text-xs"></i>
+                        <i :class="[selectedFilter.icon, 'text-xs']"></i>
                     </div>
                 </div>
-                <div class="flex items-baseline gap-1.5">
-                    <span class="text-xl font-bold text-slate-800 xl:text-2xl">{{ floodCount }}</span>
-                    <span class="text-[10px] text-slate-500 xl:text-xs">ชุมชน</span>
-                </div>
-            </div>
-
-            <div
-                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
-            >
-                <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />อัคคีภัย</p>
-                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-red-50 text-red-600">
-                        <i class="fa-solid fa-fire text-xs"></i>
-                    </div>
-                </div>
-                <div class="flex items-baseline gap-1.5">
-                    <span class="text-xl font-bold text-slate-800 xl:text-2xl">{{ fireCount }}</span>
-                    <span class="text-[10px] text-slate-500 xl:text-xs">ชุมชน</span>
-                </div>
-            </div>
-
-            <div
-                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
-            >
-                <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">พื้นที่เสี่ยง<br />วาตภัย</p>
-                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-teal-50 text-teal-600">
-                        <i class="fa-solid fa-wind text-xs"></i>
-                    </div>
-                </div>
-                <div class="flex items-baseline gap-1.5">
-                    <span class="text-xl font-bold text-slate-800 xl:text-2xl">{{ windCount }}</span>
-                    <span class="text-[10px] text-slate-500 xl:text-xs">ชุมชน</span>
-                </div>
-            </div>
-
-            <div
-                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
-            >
-                <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">คลื่นความร้อน<br />เฉลี่ย</p>
-                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600">
-                        <i class="fa-solid fa-temperature-arrow-up text-xs"></i>
-                    </div>
-                </div>
-                <div class="flex items-baseline gap-1.5">
-                    <span class="text-xl font-bold text-slate-800 xl:text-2xl">{{ avgHeatC }}</span>
-                    <span class="text-[10px] text-slate-500 xl:text-xs">°C</span>
-                </div>
-            </div>
-
-            <div
-                class="pointer-events-auto min-w-[120px] max-w-[160px] flex-1 shrink cursor-default rounded-xl border border-slate-100 bg-white/90 p-3 shadow-lg backdrop-blur-md transition-transform hover:-translate-y-1 xl:p-4"
-            >
-                <div class="mb-2 flex items-start justify-between">
-                    <p class="text-[11px] font-medium leading-tight text-slate-500 xl:text-[12px]">ค่าฝุ่น PM 2.5<br />เฉลี่ย</p>
-                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-purple-50 text-purple-600">
-                        <i class="fa-solid fa-smog text-xs"></i>
-                    </div>
-                </div>
-                <div class="flex items-baseline gap-1.5">
-                    <span class="text-xl font-bold text-slate-800 xl:text-2xl">{{ avgPm25 }}</span>
-                    <span class="ml-1 text-[10px] font-medium text-red-500 xl:text-[11px]">(เฝ้าระวัง)</span>
-                </div>
+                <p class="text-sm font-bold text-slate-800 xl:text-base">{{ risk?.dataDate ? formatThaiDate(risk.dataDate) : 'ยังไม่มีข้อมูล' }}</p>
+                <p v-if="levelCounts.missing || levelCounts.na" class="mt-0.5 text-[10px] text-slate-500">
+                    <template v-if="levelCounts.missing">ข้อมูลไม่ครบ {{ levelCounts.missing }}</template>
+                    <template v-if="levelCounts.missing && levelCounts.na"> · </template>
+                    <template v-if="levelCounts.na">ไม่เกี่ยวข้อง {{ levelCounts.na }}</template>
+                    ชุมชน
+                </p>
             </div>
         </div>
 
@@ -889,6 +958,24 @@ onUnmounted(() => {
         0 4px 6px -1px rgb(0 0 0 / 0.1),
         0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
     margin-top: 80px !important; /* Push down to clear top bar */
+}
+
+/* Community zones: fade to the new level colors when the hazard filter changes. */
+.community-zone {
+    transition:
+        fill 0.6s ease,
+        stroke 0.6s ease,
+        fill-opacity 0.6s ease;
+}
+/* Sidebar ranking: rows slide to their new place when the hazard filter changes. */
+.rank-move {
+    transition: transform 0.5s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+    .community-zone,
+    .rank-move {
+        transition: none;
+    }
 }
 
 /* Sidebar State Styles */

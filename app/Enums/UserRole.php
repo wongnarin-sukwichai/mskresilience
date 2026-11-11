@@ -13,7 +13,7 @@ enum UserRole: string
         return match ($this) {
             self::Admin => 'ผู้ดูแลระบบ',
             self::Staff => 'เจ้าหน้าที่',
-            self::Member => 'บุคคลทั่วไป',
+            self::Member => 'ผู้บริหาร',
         };
     }
 }

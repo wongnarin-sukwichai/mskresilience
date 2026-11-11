@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\RiskFactorsController;
 use App\Http\Controllers\Admin\RiskOverviewController;
 use App\Http\Controllers\Admin\ScoringCriteriaController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\YearComparisonController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -27,6 +28,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('risk-factors', [RiskFactorsController::class, 'index'])->name('risk-factors.index');
         Route::get('impact-recovery', [ImpactRecoveryController::class, 'index'])->name('impact-recovery.index');
         Route::get('mcr2030-kpi', [Mcr2030KpiController::class, 'index'])->name('mcr2030-kpi.index');
+        // เปรียบเทียบรายปี: two fiscal years side by side, with the data year and criteria set behind each number.
+        Route::get('year-comparison', [YearComparisonController::class, 'index'])->name('year-comparison.index');
     });
 
     // จัดการข้อมูล module — admin and staff. Per-sheet (กลุ่มงาน) import permission comes from

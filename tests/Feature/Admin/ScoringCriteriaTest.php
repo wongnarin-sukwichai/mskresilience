@@ -211,28 +211,48 @@ class ScoringCriteriaTest extends TestCase
         $this->assertTrue(CriteriaSets::inUse($set));
     }
 
-    public function test_a_start_year_may_not_move_existing_data_to_another_set()
+    public function test_moving_existing_data_to_another_set_needs_confirmation()
     {
         $used = $this->makeSet(['name' => 'ใช้แล้ว', 'start_fiscal_year' => 2568]);
         $this->dataOn('2025-01-20'); // 2568
         $this->dataOn('2025-11-01'); // 2569
         $admin = $this->admin();
 
-        // A new set starting 2569 would take 2569's data away from "ใช้แล้ว".
+        // A new set starting 2569 would take 2569's data away from "ใช้แล้ว": asks first, saves nothing.
         $this->actingAs($admin)
             ->post('/scoring-criteria', ['name' => 'ใหม่', 'start_fiscal_year' => 2569, 'copy_from' => $used->id])
-            ->assertSessionHasErrors('start_fiscal_year');
-        // Starting after the data is fine.
+            ->assertSessionHasErrors('confirm_move');
+        $this->assertStringStartsWith('ปีงบ 2569 จะเปลี่ยนจากชุด "ใช้แล้ว" ไปใช้ชุด "ใหม่"', session('errors')->first('confirm_move'));
+        $this->assertSame(1, ScoringCriteriaSet::count());
+        // Starting after the data needs no confirmation.
         $this->actingAs($admin)
             ->post('/scoring-criteria', ['name' => 'ใหม่', 'start_fiscal_year' => 2570, 'copy_from' => $used->id])
             ->assertSessionHasNoErrors();
 
-        // Nor can an unused set be moved back over data.
+        // The "forgot to set the criteria first" fix: an unused set moved back over 2569 asks, then moves it.
         $new = ScoringCriteriaSet::where('name', 'ใหม่')->firstOrFail();
-        $this->actingAs($admin)
-            ->put("/scoring-criteria/{$new->id}", ['name' => 'ใหม่', 'start_fiscal_year' => 2569, 'weights' => CriteriaSchema::defaults()])
-            ->assertSessionHasErrors('start_fiscal_year');
+        $payload = ['name' => 'ใหม่', 'start_fiscal_year' => 2569, 'weights' => CriteriaSchema::defaults()];
+        $this->actingAs($admin)->put("/scoring-criteria/{$new->id}", $payload)->assertSessionHasErrors('confirm_move');
         $this->assertSame(2570, $new->fresh()->start_fiscal_year);
+
+        $this->actingAs($admin)->put("/scoring-criteria/{$new->id}", [...$payload, 'confirm_move' => true])->assertSessionHasNoErrors();
+        $this->assertSame(2569, $new->fresh()->start_fiscal_year);
+        $this->assertSame(2569, CriteriaSets::resolve(2569, ScoringCriteriaSet::all())->start_fiscal_year);
+        $this->assertTrue(CriteriaSets::inUse($new->fresh()));
+    }
+
+    public function test_the_move_confirmation_never_hides_a_real_error()
+    {
+        $used = $this->makeSet(['name' => 'ใช้แล้ว', 'start_fiscal_year' => 2568]);
+        $this->makeSet(['name' => 'ใหม่', 'start_fiscal_year' => 2570]);
+        $this->dataOn('2025-11-01'); // 2569
+        $new = ScoringCriteriaSet::where('name', 'ใหม่')->firstOrFail();
+
+        $this->actingAs($this->admin())
+            ->put("/scoring-criteria/{$new->id}", ['name' => 'ใช้แล้ว', 'start_fiscal_year' => 2569, 'weights' => CriteriaSchema::defaults()])
+            ->assertSessionHasErrors('name')
+            ->assertSessionDoesntHaveErrors('confirm_move');
+        $this->assertModelExists($used);
     }
 
     public function test_start_years_must_be_unique()

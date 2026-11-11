@@ -107,7 +107,7 @@ Guard failures no longer render a 403 page:
 **Fading Leaflet filter toggles** (`resources/js/lib/leafletFade.ts`): **unused since 2026-11-10**. Welcome.vue no longer hides layers by hazard; it recolors every zone through the `.community-zone` CSS transition, like page 3. Delete it, or reuse it only if a page truly needs to add and remove a vector layer.
 
 **Admin panel** (`resources/js/layouts/AdminLayout.vue`) is a bespoke dark-sidebar shell, not the shadcn `AppSidebarLayout`: it has a different visual language and is built custom like `Welcome.vue`. As of 2026-10-29 the sidebar is 3 expandable **modules**:
-- **`แดชบอร์ด`** (every role) contains the 6 display pages. It is always open by default (`DASHBOARD_MODULE` in `openGroups`), because it is the most-used module and the only one a member sees. The name matches the client's own term ("Dashboard ใช้ …" in the equations docx). The pages are: เกี่ยวกับระบบ, ภาพรวมความเสี่ยง, แผนที่รายชุมชน, ปัจจัยความเสี่ยง, ผลกระทบและการฟื้นตัว, MCR2030 & KPI. The names come from the client's 5-page display spec image (`public/file/271069/f2c76ec6-….jpg`), without the number prefixes, plus MCR2030 & KPI.
+- **`แดชบอร์ด`** (every role) contains the 6 display pages. It is always open by default (`DASHBOARD_MODULE` in `openGroups`), because it is the most-used module and the only one a member sees. The name matches the client's own term ("Dashboard ใช้ …" in the equations docx). The pages are: เกี่ยวกับระบบ, ภาพรวมความเสี่ยง, แผนที่รายชุมชน, ปัจจัยความเสี่ยง, ผลกระทบและการฟื้นตัว, MCR2030 & KPI, เปรียบเทียบรายปี. The names come from the client's 5-page display spec image (`public/file/271069/f2c76ec6-….jpg`), without the number prefixes, plus MCR2030 & KPI and the owner's เปรียบเทียบรายปี (2026-11-11).
 - **`จัดการข้อมูล`** (admin/staff) contains นำเข้าข้อมูล and ประวัตินำเข้า.
 - **`ตั้งค่าระบบ`** (admin) contains จัดการสมาชิก, จัดการชุมชน, จัดการเกณฑ์คะแนน and จัดการประวัตินำเข้า. For staff/member it is an inert placeholder `<div>`.
 
@@ -119,7 +119,7 @@ If a page needs a basemap, use the same three **Esri ArcGIS** tile services as `
 
 Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anchor on the thumb `<span>`, not just `top-0.5`. Omitting `left` was a real bug once: the thumb rendered outside the track.
 
-**Role display labels**: `UserRole::label()` (PHP) and the `roleLabels` map duplicated in `Users.vue`/`AdminLayout.vue` (TS) both call the `member` role "บุคคลทั่วไป" (not "สมาชิก") — a deliberate rename; keep all three in sync if it changes again. The enum value itself is still `member`.
+**Role display labels**: `UserRole::label()` (PHP) and the `roleLabels` map duplicated in `Users.vue`/`AdminLayout.vue` (TS) both call the `member` role "ผู้บริหาร" (owner 2026-11-11; earlier "บุคคลทั่วไป", before that "สมาชิก"); keep all three in sync if it changes again. The enum value itself is still `member`.
 
 **Leftover mock data, unused since 2026-11-10**: `resources/js/data/hazardMeta.ts`, plus `activeRisk`, `riskColors` and `riskNameTH` in `mahasarakham.ts` (`communityZones.ts` still copies `activeRisk`). They were the demo risk values of the old public map. **Never display them again**, because real risk comes from RiskEngine. They are candidates for cleanup.
 - `hazardOrder`.
@@ -304,6 +304,20 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 
 `AdminLayout`'s `isActive()` also matches sub-paths, so นำเข้าข้อมูล stays highlighted (and its module open) on `/data-import/{group}`.
 
+**เปรียบเทียบรายปี** (`/year-comparison`, `YearComparisonController` + `pages/admin/YearComparison.vue`, every role, the last child of แดชบอร์ด). Built 2026-11-11 from a mock the owner refined over many rounds (the mock `/compare-preview` is deleted).
+- **Purpose:** answers the executive question "did risk go up or down between fiscal year A and B?". Pages 2/3/4/6 can't: their Δ is vs each community's previous import, not vs a chosen year.
+- **Server:** `RiskEngine::run()` twice, as of each year's 30 Sep (the latest year = all data). City values are population-weighted.
+- **"ไม่มีข้อมูลใหม่" (stale):** a community whose `dataDate` is the same on both sides got no import in between. It is left out of every Δ, because it would pull Δ toward 0 when the truth is "unknown".
+- **Set change split:** when a comparable community's criteria set differs between sides, side A is re-run with side B's set (engine override). Each hazard's Δ is split into `fromData`/`fromCriteria`.
+- **สาเหตุหลัก:** the E, V or C term that moved HEVC most in the direction of the change (midpoint split of the HEVC formula, side-B weights). It isn't a mock any more.
+- **Page:**
+  - year A/B selects (reload), a swap button (amber), and "ค่าความ ต่าง ที่รับได้" (±0.5/1/2, default 1). The tolerance only reclassifies on the client: ลดลง/เพิ่มขึ้น/ทรงตัว.
+  - the summary card (owner's reference picture): the city line, hazard rows, community status counts, level changes.
+  - a criteria notice, the A/B cards (data years per side + sets per side, colored per set), the hazard table with "แยกส่วน Δ", and the community table. In the table, the cell shows "↺ YEAR" (amber) only when a side's data year differs from that column's year; a stale B shows a "ไม่มีข้อมูลปีนี้" badge.
+  - A row click opens a menu to page 3/4 with `?community=&year=B`.
+- **Owner design decisions (keep):** no free what-if criteria choice (each year uses its configured sets). No color-only meaning: always an icon/text too. Fewer than 2 fiscal years shows an empty state.
+- **Dev DB (2026-11-11):** has only FY 2568, so the real page shows the empty state until a second year is imported.
+
 **Admin header** (owner, 2026-11-10): the old mock bell (a hard-coded "6") and the date chip's dropdown arrow were removed; don't re-add an alert badge until there are real notifications. The search box is a real **community search**: `HandleInertiaRequests` shares `communityIndex` (code + name, logged-in users only), matching name or code (a typed "ชุมชน" prefix is ignored), with arrow keys/Enter, and opens `community-map?community=CODE`.
 
 **`จัดการเกณฑ์คะแนน`** (`/scoring-criteria`, `role:admin` only): **real, DB-backed since 2026-10-29**, built with the owner as the backend rebuild's 2nd menu. The code is `App\Scoring\CriteriaSchema`, `ScoringCriteriaController`, `ScoringCriteriaSetRequest`, model `ScoringCriteriaSet`, table `scoring_criteria_sets` (`name` unique, `start_fiscal_year` unique, `is_locked`, `weights` JSON), and `resources/js/pages/admin/ScoringCriteria.vue`. The page no longer touches the mock `criteriaList`.
@@ -321,7 +335,8 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
   - `fiscalYear($date)`: Oct starts the next year (2024-10-01 → 2568).
   - `resolve($fy, $sets)`: the set with the latest start ≤ fy; data older than every set uses the **earliest** set (the UI notes this).
   - **In use = auto-locked:** a set that any imported record resolves to (`usage()`, computed live from every sheet's `ImportSheet::recordDates()`: ASSESSMENT_DATE, or EVENT_START for events) can't be edited, unlocked or deleted (red toast). Not stored: cancelling the last import of a year frees the set again.
-  - `conflict()`: creating a set or changing a start year is refused (validation error on `start_fiscal_year`) if any fiscal year with data would resolve to a different set. So a new set must start after the latest year with data, and new numbers come from **คัดลอก** with a later start year.
+  - `moves()` (replaced the hard-refusing `conflict()`, owner 2026-11-11): creating a set or changing a start year that would move fiscal years **with data** to another set needs confirmation. The server returns a `confirm_move` validation error with `movesMessage()` (which years, from → to set, "numbers already shown will change"); the page shows it in a `ConfirmDialog` and resends with `confirm_move=1`. This is the fix for "imported a year's data before setting up its new criteria": criteria rarely change, so it's easy to forget. Recommended flow: **คัดลอก** to a year with no data (the suggested default), edit the weights, then change the start year back (confirm). Cloning straight onto a year with data also works after confirming, but the new set is in use at once, so it locks immediately.
+  - The import confirm dialog shows **which set each fiscal year in the file will use** (`criteriaByYear` prop from `DataImportController::criteriaByYear()`). It is plain info, deliberately **not** a warning, because most new years just keep the latest set.
   - The manual lock/unlock stays for unused sets. Delete needs unused + unlocked, and never the last set.
   - Existing sets were migrated to start 2568 (the earliest data, Jan 2025). The seeder also uses 2568.
 - **Settled engine rules (owner 2026-11-06):** no per-hazard E/V/C weights, ever (one set: 0.3846/0.6154/0.16). R*_OBSERVED uses the same Recovery weights as R1–R5. HEVC max is ~84, which is accepted (Q6 = ก): no rescale, `C_HEVC = 1 + 0.8·C_RAW` and the bands 0–24/25–49/50–74/75–100 stay. No cross-hazard V or C totals; the rollup happens only at MULTI_HAZARD_HEVC. The data round is the latest record per sheet per community.

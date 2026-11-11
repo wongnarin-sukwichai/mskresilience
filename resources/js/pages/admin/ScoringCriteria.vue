@@ -139,11 +139,25 @@ function warnAboveHit(section: CriteriaSection, colKey: string): boolean {
 // ---------------------------------------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------------------------------------
-function save() {
+// A start year that moves years with data to another set comes back as a `confirm_move` error carrying the
+// server's explanation. The admin confirms it here and the same request is resent with confirm_move (owner
+// 2026-11-11: for a criteria change set up only after that year's data was imported).
+const moveConfirm = ref<{ message: string; run: () => void } | null>(null);
+
+function confirmMove() {
+    const pending = moveConfirm.value;
+    moveConfirm.value = null;
+    pending?.run();
+}
+
+function save(confirmMoveYears = false) {
     if (!selectedSet.value) return;
-    form.put(route('scoring-criteria.update', selectedSet.value.id), {
+    form.transform((data) => ({ ...data, confirm_move: confirmMoveYears })).put(route('scoring-criteria.update', selectedSet.value.id), {
         preserveScroll: true,
         onSuccess: () => loadSelected(),
+        onError: (errors) => {
+            if (errors.confirm_move) moveConfirm.value = { message: errors.confirm_move, run: () => save(true) };
+        },
     });
 }
 
@@ -156,7 +170,7 @@ function postAction(name: 'lock' | 'unlock') {
 const cloneOpen = ref(false);
 const cloneForm = useForm({ name: '', start_fiscal_year: 0 as number, copy_from: 0 });
 
-// A new set can only start after every year that already has data (otherwise that data would move to it).
+// Suggest the first year after all data, so nothing moves. An earlier year is allowed after a confirmation.
 const suggestedStartYear = computed(() => Math.max(...props.sets.map((s) => s.start_fiscal_year), ...props.dataYears) + 1);
 
 function openClone() {
@@ -168,19 +182,24 @@ function openClone() {
     cloneOpen.value = true;
 }
 
-function submitClone() {
+function submitClone(confirmMoveYears = false) {
     const newName = cloneForm.name.trim();
-    cloneForm.post(route('scoring-criteria.store'), {
-        preserveScroll: true,
-        onSuccess: () => {
-            cloneOpen.value = false;
-            const created = props.sets.find((s) => s.name === newName);
-            if (created) {
-                selectedId.value = created.id;
-                loadSelected();
-            }
-        },
-    });
+    cloneForm
+        .transform((data) => ({ ...data, confirm_move: confirmMoveYears }))
+        .post(route('scoring-criteria.store'), {
+            preserveScroll: true,
+            onError: (errors) => {
+                if (errors.confirm_move) moveConfirm.value = { message: errors.confirm_move, run: () => submitClone(true) };
+            },
+            onSuccess: () => {
+                cloneOpen.value = false;
+                const created = props.sets.find((s) => s.name === newName);
+                if (created) {
+                    selectedId.value = created.id;
+                    loadSelected();
+                }
+            },
+        });
 }
 
 // Delete
@@ -510,7 +529,7 @@ const inputClass =
                         <button
                             type="button"
                             :disabled="formHasProblem || !form.isDirty || form.processing"
-                            @click="save"
+                            @click="save()"
                             class="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {{ form.processing ? 'กำลังบันทึก...' : 'บันทึก' }}
@@ -541,7 +560,7 @@ const inputClass =
                         <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
-                <form @submit.prevent="submitClone" class="space-y-4 p-6">
+                <form @submit.prevent="submitClone()" class="space-y-4 p-6">
                     <p class="text-sm text-slate-500">
                         สร้างชุดใหม่โดยคัดลอกค่าทั้งหมดจาก "<span class="font-medium text-slate-700">{{ selectedSet?.name }}</span
                         >" ชุดใหม่จะแก้ไขได้จนกว่าจะมีข้อมูลในปีงบประมาณที่ชุดนี้ครอบคลุม
@@ -570,7 +589,7 @@ const inputClass =
                         <p v-if="cloneForm.errors.start_fiscal_year" class="mt-1.5 text-xs text-red-600">{{ cloneForm.errors.start_fiscal_year }}</p>
                         <p v-else class="mt-1.5 text-[11px] text-slate-400">
                             ปีงบประมาณ = ต.ค.–ก.ย. ข้อมูลตั้งแต่ปีนี้ไปจะคำนวณด้วยชุดใหม่<template v-if="dataYears.length">
-                                (ต้องหลังปีที่มีข้อมูลแล้ว: {{ dataYears.join(', ') }})</template
+                                (ปีที่มีข้อมูลแล้ว: {{ dataYears.join(', ') }} ถ้าเลือกปีเหล่านี้ ระบบจะให้ยืนยันก่อน)</template
                             >
                         </p>
                     </div>
@@ -602,6 +621,15 @@ const inputClass =
             :processing="deleting"
             @confirm="destroySet"
             @cancel="deleteOpen = false"
+        />
+
+        <ConfirmDialog
+            :open="moveConfirm !== null"
+            title="เปลี่ยนเกณฑ์ของปีที่มีข้อมูลแล้ว?"
+            :message="moveConfirm?.message ?? ''"
+            confirm-label="ยืนยันเปลี่ยนเกณฑ์"
+            @confirm="confirmMove"
+            @cancel="moveConfirm = null"
         />
 
         <ConfirmDialog

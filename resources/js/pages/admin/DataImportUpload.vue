@@ -46,6 +46,8 @@ const props = defineProps<{
     exampleRows: (string | number | null)[][];
     importReady: boolean;
     preview: Preview | null;
+    /** The criteria set each fiscal year in the waiting file will use (plain info in the confirm dialog). */
+    criteriaByYear: { year: number; set: string | null }[];
     lastImport: HistoryItem | null;
 }>();
 
@@ -790,6 +792,14 @@ function formatFileSize(bytes: number) {
                             </template>
                             <dt class="text-slate-500">ช่องว่าง</dt>
                             <dd class="text-slate-800">{{ preview.summary.blankCount }} ช่อง (บันทึกเป็นไม่มีข้อมูล)</dd>
+                            <template v-if="criteriaByYear.length">
+                                <dt class="text-slate-500">เกณฑ์ที่ใช้คำนวณ</dt>
+                                <dd class="text-slate-800">
+                                    <span v-for="c in criteriaByYear" :key="c.year" class="block">
+                                        ปีงบ {{ c.year }} ใช้ชุด <span class="font-medium">“{{ c.set ?? 'ยังไม่มีชุดเกณฑ์' }}”</span>
+                                    </span>
+                                </dd>
+                            </template>
                         </dl>
 
                         <div v-if="preview.summary.replaceCount" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-800">

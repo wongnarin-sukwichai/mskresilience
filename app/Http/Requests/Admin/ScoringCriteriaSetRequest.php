@@ -11,9 +11,10 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
- * Validates a set's name, start fiscal year and full weights tree on update. The start year may not move
- * existing data to another set (CriteriaSets::conflict). The per-weight and per-row-sum checks come from
- * CriteriaSchema::validate() so the server enforces exactly what the UI shows.
+ * Validates a set's name, start fiscal year and full weights tree on update. A start year that moves existing
+ * data to another set needs the admin's confirmation (confirm_move, CriteriaSets::moves, owner 2026-11-11). The
+ * per-weight and per-row-sum checks come from CriteriaSchema::validate() so the server enforces exactly what the
+ * UI shows.
  */
 class ScoringCriteriaSetRequest extends FormRequest
 {
@@ -41,19 +42,22 @@ class ScoringCriteriaSetRequest extends FormRequest
     {
         return [
             function (Validator $validator) {
-                if (! $validator->errors()->has('start_fiscal_year')) {
-                    $conflict = CriteriaSets::conflict($this->route('set'), (int) $this->input('start_fiscal_year'));
-                    if ($conflict) {
-                        $validator->errors()->add('start_fiscal_year', $conflict);
-                    }
-                }
-            },
-            function (Validator $validator) {
                 if ($validator->errors()->has('weights')) {
                     return;
                 }
                 foreach (CriteriaSchema::validate($this->input('weights', [])) as $key => $message) {
                     $validator->errors()->add($key, $message);
+                }
+            },
+            // Last, and only on an otherwise valid form, so the confirmation never hides a real error. A start year
+            // that moves years with data to another set needs confirm_move (owner 2026-11-11).
+            function (Validator $validator) {
+                if ($validator->errors()->isNotEmpty() || $this->boolean('confirm_move')) {
+                    return;
+                }
+                $moves = CriteriaSets::moves($this->route('set'), (int) $this->input('start_fiscal_year'), $this->input('name'));
+                if ($moves) {
+                    $validator->errors()->add('confirm_move', CriteriaSets::movesMessage($moves));
                 }
             },
         ];

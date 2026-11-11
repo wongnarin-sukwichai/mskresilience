@@ -23,7 +23,11 @@ class UserManagementController extends Controller
     public function index(): Response
     {
         return Inertia::render('admin/Users', [
-            'users' => User::query()->orderBy('name')->get(),
+            // ผู้ดูแลระบบก่อน แล้วเจ้าหน้าที่ แล้วผู้บริหาร; ภายในกลุ่มเรียงตามชื่อ
+            'users' => User::query()
+                ->orderByRaw("CASE role WHEN 'admin' THEN 0 WHEN 'staff' THEN 1 ELSE 2 END")
+                ->orderBy('name')
+                ->get(),
             'workGroups' => WorkGroup::options(),
         ]);
     }

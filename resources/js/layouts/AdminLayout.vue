@@ -16,7 +16,7 @@ const user = computed(() => page.props.auth.user);
 const roleLabels: Record<string, string> = {
     admin: 'ผู้ดูแลระบบ',
     staff: 'เจ้าหน้าที่',
-    member: 'บุคคลทั่วไป',
+    member: 'ผู้บริหาร',
 };
 
 interface NavLink {
@@ -44,6 +44,7 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
             { label: 'ปัจจัยความเสี่ยง', icon: 'fa-solid fa-triangle-exclamation', href: route('risk-factors.index') },
             { label: 'ผลกระทบและการฟื้นตัว', icon: 'fa-solid fa-rotate', href: route('impact-recovery.index') },
             { label: 'MCR2030 & KPI', icon: 'fa-solid fa-bullseye', href: route('mcr2030-kpi.index') },
+            { label: 'เปรียบเทียบรายปี', icon: 'fa-solid fa-code-compare', href: route('year-comparison.index') },
         ],
     },
     // จัดการข้อมูล module — admin/staff only, hidden from member.

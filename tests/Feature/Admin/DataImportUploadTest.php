@@ -8,8 +8,10 @@ use App\Import\ImportColumns;
 use App\Import\ImportSheets;
 use App\Models\Community;
 use App\Models\ImportBatch;
+use App\Models\ScoringCriteriaSet;
 use App\Models\User;
 use App\Models\WelfareRecord;
+use App\Scoring\CriteriaSchema;
 use Database\Seeders\CommunitySeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -497,5 +499,23 @@ class DataImportUploadTest extends TestCase
         $community = Community::where('code', 'R001')->first();
         $this->actingAs($admin)->delete("/communities/{$community->id}")->assertSessionHas('error');
         $this->assertModelExists($community);
+    }
+
+    public function test_confirm_dialog_names_the_criteria_set_per_fiscal_year()
+    {
+        ScoringCriteriaSet::create(['name' => 'ชุดแรก', 'start_fiscal_year' => 2568, 'is_locked' => false, 'weights' => CriteriaSchema::defaults()]);
+        ScoringCriteriaSet::create(['name' => 'ชุดใหม่', 'start_fiscal_year' => 2570, 'is_locked' => false, 'weights' => CriteriaSchema::defaults()]);
+        $staff = $this->staff();
+        $this->upload($staff, $this->xlsx([
+            ['2025-01-20', 'R001', null, 1, 1, 1, 1], // 2568
+            ['2026-11-01', 'R002', null, 1, 1, 1, 1], // 2570
+            ['2025-12-01', 'R003', null, 1, 1, 1, 1], // 2569 → still ชุดแรก
+        ]));
+
+        $this->actingAs($staff)->get('/data-import/welfare')->assertInertia(fn ($page) => $page->where('criteriaByYear', [
+            ['year' => 2568, 'set' => 'ชุดแรก'],
+            ['year' => 2569, 'set' => 'ชุดแรก'],
+            ['year' => 2570, 'set' => 'ชุดใหม่'],
+        ]));
     }
 }

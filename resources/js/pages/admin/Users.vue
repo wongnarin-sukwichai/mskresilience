@@ -16,7 +16,7 @@ const currentUserId = computed(() => page.props.auth.user.id);
 const roleLabels: Record<UserRole, string> = {
     admin: 'ผู้ดูแลระบบ',
     staff: 'เจ้าหน้าที่',
-    member: 'บุคคลทั่วไป',
+    member: 'ผู้บริหาร',
 };
 
 const roleBadgeClass: Record<UserRole, string> = {
@@ -325,7 +325,7 @@ const inputClass =
                         <i class="fa-solid fa-circle-info mr-1"></i>ผู้ดูแลระบบนำเข้าข้อมูลได้ทุกกลุ่มงานโดยอัตโนมัติ
                     </p>
                     <p v-else class="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs text-slate-500">
-                        <i class="fa-solid fa-circle-info mr-1"></i>บุคคลทั่วไปดูแดชบอร์ดได้อย่างเดียว ไม่มีสิทธิ์นำเข้าข้อมูล
+                        <i class="fa-solid fa-circle-info mr-1"></i>ผู้บริหารดูแดชบอร์ดได้อย่างเดียว ไม่มีสิทธิ์นำเข้าข้อมูล
                     </p>
 
                     <div class="flex items-center gap-3 border-t border-slate-100 pt-4">

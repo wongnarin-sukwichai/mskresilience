@@ -14,7 +14,9 @@ use Illuminate\Support\Collection;
  *   uses the latest set. Data older than the earliest set uses the earliest set.
  * - A set that some imported record resolves to is "in use" and read-only. This is computed live from the data
  *   tables, so cancelling the only import of a year frees its set again.
- * - Adding a set or changing a start year must never move existing data to another set: conflict() refuses it.
+ * - Adding a set or changing a start year that moves years with data to another set needs the admin's explicit
+ *   confirmation (moves(); owner 2026-11-11, for a criteria change set up only after that year's data was
+ *   imported). Scores are computed live, so the moved years just recompute; nothing is re-imported.
  */
 class CriteriaSets
 {
@@ -85,17 +87,21 @@ class CriteriaSets
     }
 
     /**
-     * Why giving $set this start year (a new set when it has no id) is refused, or null if it is allowed.
-     * Refused when any fiscal year with data would resolve to a different set than it does now.
+     * The fiscal years with data that would resolve to a different set if $set got this start year (a new set
+     * when it has no id). Each item: year, from (the set it uses now), to (the set it would use).
+     *
+     * @return list<array{year: int, from: string, to: string}>
      */
-    public static function conflict(ScoringCriteriaSet $set, int $startYear): ?string
+    public static function moves(ScoringCriteriaSet $set, int $startYear, ?string $name = null): array
     {
         $current = ScoringCriteriaSet::all();
         $proposed = $current->reject(fn ($s) => $set->exists && $s->id === $set->id)->values();
         $candidate = clone $set;
         $candidate->start_fiscal_year = $startYear;
+        $candidate->name = $name ?? $set->name;
         $proposed->push($candidate);
 
+        $moves = [];
         foreach (self::dataFiscalYears() as $year) {
             $before = self::resolve($year, $current);
             $after = self::resolve($year, $proposed);
@@ -103,13 +109,27 @@ class CriteriaSets
                 continue; // the very first set: nothing to move away from
             }
             $same = $after === $candidate ? ($set->exists && $before->id === $set->id) : $after->id === $before->id;
-            if ($same) {
-                continue;
+            if (! $same) {
+                $moves[] = ['year' => $year, 'from' => $before->name, 'to' => $after->name];
             }
-
-            return "ปีงบประมาณ {$year} มีข้อมูลที่คำนวณด้วยชุด \"{$before->name}\" อยู่แล้ว ปีเริ่มใช้นี้จะทำให้ข้อมูลปีนั้นเปลี่ยนไปใช้ชุดอื่น";
         }
 
-        return null;
+        return $moves;
+    }
+
+    /**
+     * The confirmation text for moves(): which years switch set, and that their numbers will change.
+     *
+     * @param  list<array{year: int, from: string, to: string}>  $moves
+     */
+    public static function movesMessage(array $moves): string
+    {
+        $lines = collect($moves)
+            ->groupBy(fn ($m) => $m['from']."\0".$m['to'])
+            ->map(fn ($group) => 'ปีงบ '.$group->pluck('year')->implode(', ')
+                .' จะเปลี่ยนจากชุด "'.$group[0]['from'].'" ไปใช้ชุด "'.$group[0]['to'].'"')
+            ->implode(' · ');
+
+        return $lines.' ข้อมูลปีนั้นนำเข้าไว้แล้ว คะแนนความเสี่ยงที่เคยแสดงหรือรายงานไปจะเปลี่ยนตามเกณฑ์ใหม่ทุกหน้า';
     }
 }

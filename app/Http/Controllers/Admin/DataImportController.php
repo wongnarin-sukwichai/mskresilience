@@ -12,6 +12,8 @@ use App\Import\ImportSheets;
 use App\Import\ImportValidator;
 use App\Import\TemplateBuilder;
 use App\Models\ImportBatch;
+use App\Models\ScoringCriteriaSet;
+use App\Scoring\CriteriaSets;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -62,6 +64,9 @@ class DataImportController extends Controller
             'importReady' => ImportSheets::for($group) !== null,
             // The validation result of the file waiting for confirmation, if any (flashed by validateFile()).
             'preview' => $preview && $pending ? [...$preview, 'token' => $pending['token'], 'filename' => $pending['filename']] : null,
+            // Which criteria set each fiscal year in that file will be calculated with, for the confirm dialog
+            // (owner 2026-11-11: plain info, not a warning, since criteria rarely change).
+            'criteriaByYear' => $preview && $pending ? $this->criteriaByYear($preview['rows'], $columns) : [],
             // The import just confirmed (flashed by confirm()), for the success card. Past imports are in the
             // ประวัตินำเข้า menu (ImportHistoryController).
             'lastImport' => ($id = $request->session()->get('importedBatchId'))
@@ -188,6 +193,27 @@ class DataImportController extends Controller
     private function pendingKey(WorkGroup $group): string
     {
         return "import.pending.{$group->value}";
+    }
+
+    /**
+     * Fiscal year → criteria set name for the record dates in the previewed rows (ASSESSMENT_DATE, or EVENT_START
+     * on the event sheet), resolved like the engine does (CriteriaSets::resolve).
+     *
+     * @param  list<array{values: array<string, mixed>}>  $rows
+     * @param  list<string>  $columns
+     * @return list<array{year: int, set: string|null}>
+     */
+    private function criteriaByYear(array $rows, array $columns): array
+    {
+        $column = in_array('EVENT_START', $columns, true) ? 'EVENT_START' : 'ASSESSMENT_DATE';
+        $sets = ScoringCriteriaSet::all();
+        $years = collect($rows)
+            ->map(fn ($row) => $row['values'][$column] ?? null)
+            ->filter(fn ($date) => is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date))
+            ->map(fn ($date) => CriteriaSets::fiscalYear($date))
+            ->unique()->sort()->values();
+
+        return $years->map(fn ($year) => ['year' => $year, 'set' => CriteriaSets::resolve($year, $sets)?->name])->all();
     }
 
     private function previewKey(WorkGroup $group): string

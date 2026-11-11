@@ -63,9 +63,12 @@ class ScoringCriteriaController extends Controller
             'start_fiscal_year.unique' => 'มีชุดเกณฑ์ที่เริ่มใช้ปีงบประมาณนี้แล้ว',
         ]);
 
-        $conflict = CriteriaSets::conflict(new ScoringCriteriaSet, (int) $validated['start_fiscal_year']);
-        if ($conflict) {
-            throw ValidationException::withMessages(['start_fiscal_year' => $conflict]);
+        // Moving years that already have data onto the new set needs an explicit confirmation (owner 2026-11-11).
+        $moves = CriteriaSets::moves(new ScoringCriteriaSet, (int) $validated['start_fiscal_year'], $validated['name']);
+        if ($moves && ! $request->boolean('confirm_move')) {
+            throw ValidationException::withMessages([
+                'confirm_move' => CriteriaSets::movesMessage($moves).' และชุดใหม่จะถูกล็อกทันทีเพราะมีข้อมูลใช้แล้ว แก้ค่าน้ำหนักไม่ได้',
+            ]);
         }
 
         $source = ScoringCriteriaSet::findOrFail($validated['copy_from']);

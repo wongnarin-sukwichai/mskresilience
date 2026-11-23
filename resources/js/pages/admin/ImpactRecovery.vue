@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ExportButtons from '@/components/admin/ExportButtons.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 // หน้า 5 ผลกระทบและการฟื้นตัว (spec v5 §5.1–5.3). Data comes from ImpactRecoveryController. Owner decisions 2026-11-10:
 // - A summary of the filtered events, plus a table; clicking a row opens one event.
 // - Readiness = the community's RECOVERY_AVG on or before the event.
@@ -6,17 +8,29 @@
 // - L&D and finance are real values, never a score. The Recovery gap is shown neutrally
 //   ("ต่างจากความพร้อมที่ประเมินไว้"), never as good/bad (spec §5.1).
 import AnimatedNumber from '@/components/admin/AnimatedNumber.vue';
+import LineChart from '@/components/admin/LineChart.vue';
+import RadarChart from '@/components/admin/RadarChart.vue';
+import ScatterChart from '@/components/admin/ScatterChart.vue';
 import ScoreBar from '@/components/admin/ScoreBar.vue';
 import { useInView } from '@/composables/useInView';
-import { HAZARD_KEYS, formatThaiDate, hazardIcon, hazardLabel } from '@/data/riskDisplay';
+import { HAZARD_KEYS, formatThaiDate, hazardIcon, hazardLabel, levelOf, riskLevels } from '@/data/riskDisplay';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import type { HazardKey, ImpactEvent } from '@/types';
-import { Head } from '@inertiajs/vue3';
+import type { HazardKey, ImpactEvent, RiskLevelKey } from '@/types';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 const props = defineProps<{
     events: ImpactEvent[];
     budgets: Record<string, number>;
+    hevcYears: number[];
+    /** code → name + HEVC per fiscal year (RiskTrend), for the damage-vs-HEVC scatter. */
+    hevc: Record<
+        string,
+        {
+            name: string;
+            years: Record<number, { multi: number | null; level: RiskLevelKey | null; hazards: Partial<Record<HazardKey, number | null>> }>;
+        }
+    >;
 }>();
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -120,6 +134,74 @@ const recovery = computed(() => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
+// Loss trend over time (TOR 4.1.1(5)-1): every year, so the year filter doesn't apply; hazard/community do.
+// ---------------------------------------------------------------------------------------------------------------
+const TREND_METRICS = [
+    { key: 'damage', label: 'มูลค่าความเสียหาย (ล้านบาท)', value: (e: ImpactEvent) => (e.loss.damageThb ?? 0) / 1_000_000 },
+    { key: 'houses', label: 'บ้านเรือนเสียหาย (หลัง)', value: (e: ImpactEvent) => e.loss.houses ?? 0 },
+    { key: 'injury', label: 'ผู้บาดเจ็บ (คน)', value: (e: ImpactEvent) => e.loss.injury ?? 0 },
+    { key: 'events', label: 'จำนวนเหตุการณ์', value: () => 1 },
+] as const;
+const trendMetric = ref<(typeof TREND_METRICS)[number]['key']>('damage');
+const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const lossTrend = computed(() => {
+    const events = props.events.filter(
+        (e) => (hazard.value === 'ALL' || e.hazard === hazard.value) && (communityCode.value === 'ALL' || e.code === communityCode.value),
+    );
+    const all = props.events.map((e) => e.start.slice(0, 7)).sort();
+    if (!all.length) return { categories: [] as string[], values: [] as number[] };
+    // Every month from the first to the last event in the system, so gaps show as zero months.
+    const months: string[] = [];
+    let [y, m] = all[0].split('-').map(Number);
+    const [ly, lm] = all[all.length - 1].split('-').map(Number);
+    while (y < ly || (y === ly && m <= lm)) {
+        months.push(`${y}-${String(m).padStart(2, '0')}`);
+        m++;
+        if (m > 12) {
+            m = 1;
+            y++;
+        }
+    }
+    const metric = TREND_METRICS.find((t) => t.key === trendMetric.value)!;
+    const totals = new Map(months.map((k) => [k, 0]));
+    for (const e of events) totals.set(e.start.slice(0, 7), (totals.get(e.start.slice(0, 7)) ?? 0) + metric.value(e));
+    return {
+        categories: months.map((k) => `${THAI_MONTHS[Number(k.slice(5)) - 1]} ${String(Number(k.slice(0, 4)) + 543).slice(2)}`),
+        values: months.map((k) => totals.get(k) ?? 0),
+    };
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Damage vs HEVC (TOR 4.1.1(5)-2): each community's HEVC in the chosen year (the latest year for ทั้งหมด) against
+// the damage of the filtered events. Communities without events sit on the zero line.
+// ---------------------------------------------------------------------------------------------------------------
+const scatterYear = computed(() => (year.value === 'ALL' ? Math.max(...props.hevcYears) : year.value));
+const scatter = computed(() => {
+    const damage = new Map<string, number>();
+    for (const e of filtered.value) damage.set(e.code, (damage.get(e.code) ?? 0) + (e.loss.damageThb ?? 0));
+    const points = Object.entries(props.hevc)
+        .map(([code, c]) => {
+            const p = c.years[scatterYear.value];
+            const x = p ? (hazard.value === 'ALL' ? p.multi : (p.hazards[hazard.value] ?? null)) : null;
+            return x === null
+                ? null
+                : {
+                      id: code,
+                      label: `${code} ${c.name}`,
+                      x,
+                      y: damage.get(code) ?? 0,
+                      color: riskLevels[levelOf(x)].color,
+                      emphasis: code === communityCode.value,
+                  };
+        })
+        .filter((p): p is NonNullable<typeof p> => p !== null);
+    const high = points.filter((p) => p.x >= 50);
+    const rest = points.filter((p) => p.x < 50);
+    const mean = (ps: typeof points) => (ps.length ? ps.reduce((s, p) => s + p.y, 0) / ps.length : null);
+    return { points, highMean: mean(high), restMean: mean(rest), highCount: high.length };
+});
+
+// ---------------------------------------------------------------------------------------------------------------
 // Event detail
 // ---------------------------------------------------------------------------------------------------------------
 const openId = ref<string | null>(null);
@@ -174,6 +256,24 @@ const selectClass =
                     <option v-for="[code, name] in communityOptions" :key="code" :value="code">{{ name }}</option>
                 </select>
             </label>
+            <div v-if="events.length" class="ml-auto flex flex-wrap items-center gap-2 pb-1 print:hidden">
+                <Link
+                    v-if="communityCode !== 'ALL'"
+                    :href="route('reports.funding', communityCode)"
+                    class="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                >
+                    <i class="fa-solid fa-file-invoice-dollar"></i>รายงานประกอบการของบประมาณ
+                </Link>
+                <ExportButtons
+                    :excel-href="
+                        route('export.events', {
+                            year: year === 'ALL' ? undefined : year,
+                            hazard: hazard === 'ALL' ? undefined : hazard,
+                            community: communityCode === 'ALL' ? undefined : communityCode,
+                        })
+                    "
+                />
+            </div>
         </div>
 
         <div v-if="!events.length" class="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">
@@ -205,7 +305,7 @@ const selectClass =
                                 ><i class="fa-solid fa-house-crack"></i
                             ></span>
                             <div>
-                                <h2 class="font-semibold text-slate-800">ความสูญเสียและความเสียหาย (Loss & Damage)</h2>
+                                <h2 class="font-semibold text-slate-800">ความสูญเสียและความเสียหาย (Loss & Damage)<TorRef :refs="['4.1.1(5)']" /></h2>
                                 <p class="text-xs text-slate-400">ค่าจริงรวมของเหตุการณ์ที่เลือก ไม่แปลงเป็นคะแนน</p>
                             </div>
                         </div>
@@ -250,7 +350,7 @@ const selectClass =
                                 ><i class="fa-solid fa-rotate"></i
                             ></span>
                             <div>
-                                <h2 class="font-semibold text-slate-800">การฟื้นฟู (Recovery)</h2>
+                                <h2 class="font-semibold text-slate-800">การฟื้นฟู (Recovery)<TorRef :refs="['4.1.1(4)']" /></h2>
                                 <p class="text-xs text-slate-400">
                                     ความพร้อมก่อนเหตุ (R1–R5) เทียบผลการฟื้นฟูจริงหลังเหตุ · {{ recovery.count }} เหตุการณ์
                                 </p>
@@ -275,23 +375,83 @@ const selectClass =
                             </div>
                         </div>
                         <p v-else class="mt-4 text-sm text-slate-400">ไม่มีเหตุการณ์ที่มีทั้งข้อมูลความพร้อมก่อนเหตุและผลการฟื้นฟูจริง</p>
-                        <ul v-if="recovery.count" class="mt-4 space-y-2.5">
-                            <li v-for="r in recovery.items" :key="r.key" class="grid grid-cols-[130px_1fr_70px] items-center gap-3 text-xs">
-                                <span class="truncate text-slate-600">{{ r.key }} {{ r.label }}</span>
-                                <div class="space-y-1">
-                                    <ScoreBar :value="r.before" :max="5" color="#94a3b8" height="h-1.5" />
-                                    <ScoreBar :value="r.after" :max="5" color="#3b82f6" height="h-1.5" />
-                                </div>
-                                <span class="text-right font-mono text-slate-700"
-                                    >{{ r.before?.toFixed(1) ?? '–' }} → {{ r.after?.toFixed(1) ?? '–' }}</span
-                                >
-                            </li>
-                        </ul>
-                        <p v-if="recovery.count" class="mt-3 flex gap-4 text-[11px] text-slate-400">
-                            <span><span class="mr-1 inline-block h-1.5 w-4 rounded-full bg-slate-400 align-middle"></span>ก่อนเหตุ</span>
-                            <span><span class="mr-1 inline-block h-1.5 w-4 rounded-full bg-blue-500 align-middle"></span>หลังเหตุ (ผลจริง)</span>
-                        </p>
+                        <!-- R1–R5 radar: readiness before the event vs observed after (TOR 4.1.1(4), คุณลักษณะ 2.5-1) -->
+                        <div v-if="recovery.count" class="mt-3">
+                            <RadarChart
+                                :axes="recovery.items.map((r) => ({ key: r.key, label: r.label }))"
+                                :series="[
+                                    { label: 'ความพร้อมก่อนเหตุ', color: '#94a3b8', values: recovery.items.map((r) => r.before), dashed: true },
+                                    { label: 'ผลจริงหลังเหตุ', color: '#3b82f6', values: recovery.items.map((r) => r.after) },
+                                ]"
+                            />
+                            <p class="mt-1 text-center text-[11px] text-slate-400">
+                                <TorRef :refs="['คุณลักษณะ 2.5-1']" /> ด้านที่หดเข้าหาศูนย์กลาง = จุดอ่อนของการฟื้นฟู
+                            </p>
+                        </div>
                     </div>
+                </div>
+
+                <!-- Loss trend over time (TOR 4.1.1(5)-1, คุณลักษณะ 2.5-2) -->
+                <div :class="[card, 'mt-5']">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h2 class="font-semibold text-slate-800">
+                                แนวโน้มความเสียหายย้อนหลัง<TorRef :refs="['4.1.1(5)-1', 'คุณลักษณะ 2.5-2']" />
+                            </h2>
+                            <p class="text-xs text-slate-400">
+                                รวมรายเดือนตลอดทุกปีที่มีข้อมูล ·
+                                {{ hazard === 'ALL' ? 'ทุกภัย' : hazardLabel[hazard] }} ·
+                                {{ communityCode === 'ALL' ? 'ทุกชุมชน' : communityOptions.find(([c]) => c === communityCode)?.[1] }}
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                            <button
+                                v-for="t in TREND_METRICS"
+                                :key="t.key"
+                                type="button"
+                                class="rounded-lg px-2.5 py-1 text-xs"
+                                :class="trendMetric === t.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                                @click="trendMetric = t.key"
+                            >
+                                {{ t.label }}
+                            </button>
+                        </div>
+                    </div>
+                    <LineChart
+                        v-if="lossTrend.categories.length"
+                        class="mt-3"
+                        :categories="lossTrend.categories"
+                        :series="[{ label: TREND_METRICS.find((t) => t.key === trendMetric)!.label, color: '#ef4444', values: lossTrend.values }]"
+                    />
+                    <p v-else class="mt-3 text-sm text-slate-400">ยังไม่มีข้อมูลเหตุการณ์</p>
+                </div>
+
+                <!-- Damage vs HEVC (TOR 4.1.1(5)-2) -->
+                <div :class="[card, 'mt-5']">
+                    <h2 class="font-semibold text-slate-800">ความเสียหายจริงเทียบกับค่า HEVC<TorRef :refs="['4.1.1(5)-2']" /></h2>
+                    <p class="text-xs text-slate-400">
+                        แต่ละจุดคือหนึ่งชุมชน · แกนนอน = ค่า HEVC {{ hazard === 'ALL' ? 'ความเสี่ยงรวม' : hazardLabel[hazard] }} ปีงบ
+                        {{ scatterYear }} · แกนตั้ง = มูลค่าความเสียหายจากเหตุการณ์ที่กรองไว้ · คลิกจุดเพื่อดูเฉพาะชุมชนนั้น
+                    </p>
+                    <ScatterChart
+                        class="mt-3"
+                        :points="scatter.points"
+                        x-label="ค่า HEVC (0–100)"
+                        y-label="ความเสียหาย (บาท)"
+                        :x-max="100"
+                        :split-x="50"
+                        :format-y="(v: number) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)} ล้าน` : Math.round(v).toLocaleString('th-TH'))"
+                        @select="(id: string) => (communityCode = communityCode === id ? 'ALL' : id)"
+                    />
+                    <p
+                        v-if="scatter.highMean !== null && scatter.restMean !== null"
+                        class="mt-2 rounded-xl bg-slate-50 px-4 py-2.5 text-xs text-slate-600"
+                    >
+                        <i class="fa-solid fa-chart-simple mr-1 text-slate-400"></i>
+                        ชุมชนที่ HEVC ตั้งแต่ 50 ขึ้นไป ({{ scatter.highCount }} ชุมชน) เสียหายเฉลี่ย <b>{{ baht(scatter.highMean) }}</b> ต่อชุมชน ·
+                        ชุมชนอื่นเฉลี่ย
+                        <b>{{ baht(scatter.restMean) }}</b>
+                    </p>
                 </div>
 
                 <!-- Finance -->

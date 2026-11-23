@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ExportButtons from '@/components/admin/ExportButtons.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 // หน้า 2 ภาพรวมความเสี่ยงของเมือง (spec v5 §2). All numbers come live from App\Scoring\RiskEngine via
 // RiskOverviewController. City values are population-weighted, and Δ compares each community with its own
 // previous round (owner 2026-11-10).
@@ -194,6 +196,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                 </select>
             </label>
             <p v-if="city && year !== latestYear" class="pb-2 text-xs text-slate-400">ข้อมูล ณ 30 ก.ย. ของปีงบประมาณที่เลือก</p>
+            <ExportButtons v-if="city" class="ml-auto pb-1" :excel-href="route('export.risk', { year: selectedYear ?? undefined })" />
         </div>
 
         <div v-if="!city" class="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">
@@ -210,7 +213,9 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                             <i class="fa-solid fa-circle-exclamation text-lg"></i>
                         </span>
                         <div>
-                            <h2 class="font-semibold text-slate-800">ระดับความเสี่ยงรวมของเมือง</h2>
+                            <h2 class="font-semibold text-slate-800">
+                                ระดับความเสี่ยงรวมของเมือง<TorRef :refs="['4.1.1(1)-2', '4.1.1(1)-4', 'คุณลักษณะ 2.2-5']" />
+                            </h2>
                             <p class="text-xs text-slate-400">{{ selectedLabel }}</p>
                         </div>
                     </div>
@@ -337,7 +342,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
             <div class="mt-5 grid gap-5 xl:grid-cols-3">
                 <div :class="[card, 'xl:col-span-2']">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h2 class="font-semibold text-slate-800">ระดับความเสี่ยงรายภัย (HEVC)</h2>
+                        <h2 class="font-semibold text-slate-800">ระดับความเสี่ยงรายภัย (HEVC)<TorRef :refs="['4.1.1(1)-1', 'คุณลักษณะ 2.2-1']" /></h2>
                         <div class="flex flex-wrap gap-3 text-[11px] text-slate-500">
                             <span v-for="k in RISK_LEVEL_KEYS" :key="k" class="flex items-center gap-1">
                                 <span class="h-2.5 w-2.5 rounded-sm" :style="{ background: riskLevels[k].color }"></span>
@@ -425,7 +430,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
             <!-- Capacity + improvement points + top 5 -->
             <div class="mt-5 grid gap-5 xl:grid-cols-3">
                 <div ref="capacityEl" :class="card">
-                    <h2 class="font-semibold text-slate-800">ความพร้อมของเมือง</h2>
+                    <h2 class="font-semibold text-slate-800">ความพร้อมของเมือง<TorRef :refs="['4.3-4', 'คุณลักษณะ 2.2-4']" /></h2>
                     <p class="text-xs text-slate-400">
                         คะแนน 0–5 (สูง = พร้อมมาก){{ hazard === 'ALL' ? ' · C6/C7 แยกตามภัย ดูได้เมื่อเลือกภัย' : '' }}
                     </p>

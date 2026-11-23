@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\WorkGroup;
 use App\Http\Controllers\Controller;
+use App\Import\BatchApplier;
 use App\Import\ColumnDescriptions;
+use App\Import\FileImporter;
 use App\Import\ImportColumns;
 use App\Import\ImportExamples;
 use App\Import\ImportHistory;
@@ -16,7 +18,6 @@ use App\Models\ScoringCriteriaSet;
 use App\Scoring\CriteriaSets;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -72,6 +73,8 @@ class DataImportController extends Controller
             'lastImport' => ($id = $request->session()->get('importedBatchId'))
                 && ($batch = ImportBatch::with('user:id,name')->where('work_group', $group)->find($id))
                 ? ImportHistory::summary($batch) : null,
+            // Approval mode is on for this user: the confirm dialog and success card say it goes to an admin.
+            'needsApproval' => BatchApplier::needsApproval($request->user()),
         ]);
     }
 
@@ -79,6 +82,17 @@ class DataImportController extends Controller
     {
         if (! $request->user()->canImport($group)) {
             return $this->refuse($group);
+        }
+
+        // CSV template: the header row only, UTF-8 with a BOM so Excel shows Thai correctly. It has no column
+        // comments or community dropdown, which only the Excel template can carry.
+        if ($request->query('format') === 'csv') {
+            return response()->streamDownload(function () use ($group) {
+                $out = fopen('php://output', 'w');
+                fwrite($out, "\xEF\xBB\xBF");
+                fputcsv($out, ImportColumns::for($group), ',', '"', '');
+                fclose($out);
+            }, "แบบฟอร์มนำเข้า_{$group->label()}.csv", ['Content-Type' => 'text/csv; charset=UTF-8']);
         }
 
         $book = TemplateBuilder::build($group);
@@ -102,18 +116,23 @@ class DataImportController extends Controller
             return back()->with('error', "ยังไม่รองรับการนำเข้าข้อมูล{$group->label()}");
         }
 
+        // Excel or CSV (TOR 4.1.1(2)-1, 4.4-2). A CSV's content is plain text, so its type is checked by the file's
+        // own extension; `mimes` still rejects e.g. a renamed image.
         $request->validate(
-            ['file' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']],
+            ['file' => ['required', 'file', 'extensions:xlsx,xls,csv', 'mimes:xlsx,xls,csv,txt', 'max:10240']],
             [
                 'file.required' => 'กรุณาเลือกไฟล์',
-                'file.mimes' => 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls)',
+                'file.extensions' => 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls) หรือ CSV (.csv)',
+                'file.mimes' => 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls) หรือ CSV (.csv)',
                 'file.max' => 'ไฟล์ต้องมีขนาดไม่เกิน 10 MB',
             ],
         );
 
         $this->discardPending($request, $group);
         $file = $request->file('file');
-        $path = $file->store('imports/tmp', 'local');
+        // Keep the real extension: the reader picks Excel or CSV by it, now and when the kept file is viewed later.
+        $extension = strtolower($file->getClientOriginalExtension());
+        $path = $file->storeAs('imports/tmp', Str::random(40).'.'.$extension, 'local');
 
         $result = (new ImportValidator($sheet))->validate(Storage::disk('local')->path($path));
         unset($result['saveRows']);
@@ -136,34 +155,15 @@ class DataImportController extends Controller
         if (! $request->user()->canImport($group)) {
             return $this->refuse($group);
         }
-        $sheet = ImportSheets::for($group);
         $pending = $request->session()->get($this->pendingKey($group));
-        if (! $sheet || ! $pending || $pending['token'] !== $request->input('token') || ! Storage::disk('local')->exists($pending['path'])) {
+        if (! $pending || $pending['token'] !== $request->input('token')) {
             return to_route('data-import.show', $group)->with('error', 'ไม่พบไฟล์ที่รอนำเข้า กรุณาอัปโหลดไฟล์อีกครั้ง');
         }
 
-        $result = (new ImportValidator($sheet))->validate(Storage::disk('local')->path($pending['path']));
-        if ($result['errors'] || ! $result['saveRows']) {
-            return to_route('data-import.show', $group)->with('error', 'ไฟล์ยังมีข้อผิดพลาด กรุณาแก้ไขแล้วอัปโหลดใหม่');
+        ['batch' => $batch, 'error' => $error] = FileImporter::confirm($group, $request->user(), $pending['path'], $pending['filename']);
+        if ($error) {
+            return to_route('data-import.show', $group)->with('error', $error);
         }
-
-        $finalPath = 'imports/'.now()->format('Y/m/d').'/'.Str::random(8).'_'.preg_replace('#[\\\\/:*?"<>|]#', '_', $pending['filename']);
-        Storage::disk('local')->move($pending['path'], $finalPath);
-
-        $batch = DB::transaction(function () use ($request, $group, $sheet, $result, $pending, $finalPath) {
-            $batch = ImportBatch::create([
-                'work_group' => $group,
-                'user_id' => $request->user()->id,
-                'original_filename' => $pending['filename'],
-                'stored_path' => $finalPath,
-                'row_count' => count($result['saveRows']),
-                'replaced_count' => $result['summary']['replaceCount'],
-                'community_count' => count($result['summary']['included']),
-            ]);
-            $sheet->save($result['saveRows'], $batch);
-
-            return $batch;
-        });
 
         $request->session()->forget([$this->pendingKey($group), $this->previewKey($group)]);
 

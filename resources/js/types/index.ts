@@ -22,6 +22,12 @@ export interface SharedData {
     auth: Auth;
     flash: { status: string | null; error: string | null };
     communityIndex: { code: string; name: string }[];
+    /** ตั้งค่าทั่วไป → แสดงเลขอ้างอิง TOR (TorRef.vue). Always false for guests. */
+    showTorRefs: boolean;
+    /** Admin only: imports/edits waiting for approval (the อนุมัติข้อมูล badge). 0 for others. */
+    pendingApprovals: number;
+    /** Admin only: days since the last database backup when overdue, -1 if never; null when fine (or not admin). */
+    backupOverdue: number | null;
     ziggy: {
         location: string;
         url: string;
@@ -113,7 +119,19 @@ export interface CityAverage {
 
 export interface CityRisk {
     multi: CityAverage & { dominant: HazardKey | null };
-    hazards: Record<HazardKey, CityAverage & { v: number | null; vDelta: number | null; cRaw: number | null; cRawDelta: number | null }>;
+    hazards: Record<
+        HazardKey,
+        CityAverage & {
+            v: number | null;
+            vDelta: number | null;
+            vPeople: number | null;
+            vPeopleDelta: number | null;
+            vSystem: number | null;
+            vSystemDelta: number | null;
+            cRaw: number | null;
+            cRawDelta: number | null;
+        }
+    >;
     groups: Record<string, number | null>;
     counts: Record<string, number>;
     totalCommunities: number;
@@ -140,6 +158,9 @@ export interface HazardResult {
     e: number | null;
     ePercent: number | null;
     v: number | null;
+    /** V split for display (TOR คุณลักษณะ 2.2-3): vulnerable groups vs warning + infrastructure gaps. */
+    vPeople: number | null;
+    vSystem: number | null;
     cRaw: number | null;
     cHevc: number | null;
 }
@@ -156,11 +177,11 @@ export interface CommunityRiskDetail {
     households: number | null;
     areaKm2: number | null;
     responseHours: number | null;
-    counts: Record<string, number | null>;
     multi: { hevc: number | null; level: RiskLevelKey | null; dominant: HazardKey | null } | null;
     hazards: Record<HazardKey, HazardResult> | null;
-    groups: Record<string, number | null> | null;
     recovery: number | null;
+    /** R1–R5 readiness scores (0–5) for the radar. */
+    recoveryItems: Record<'R1' | 'R2' | 'R3' | 'R4' | 'R5', number | null>;
     previous: { dataDate: string; multi: number | null; hazards: Record<HazardKey, number | null> } | null;
 }
 
@@ -194,7 +215,7 @@ export interface CommunityFactors {
     previous: {
         dataDate: string;
         groups: Record<string, number | null>;
-        hazards: Record<HazardKey, { v: number | null; cRaw: number | null }>;
+        hazards: Record<HazardKey, { v: number | null; vPeople: number | null; vSystem: number | null; cRaw: number | null }>;
     } | null;
 }
 
@@ -248,6 +269,8 @@ export type McrStatus = 'full' | 'partial' | 'none';
 
 export interface McrCommunityEvidence {
     status: McrStatus;
+    /** Coverage-gauge points: full 1, partial 0.5, none 0 (not a resilience score). */
+    points: number;
     found: string[];
     missing: string[];
     sentence: string;

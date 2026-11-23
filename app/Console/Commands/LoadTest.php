@@ -1,0 +1,182 @@
+<?php
+
+namespace App\Console\Commands;
+
+use GuzzleHttp\Client;
+use GuzzleHttp\Cookie\CookieJar;
+use GuzzleHttp\Exception\TransferException;
+use GuzzleHttp\Handler\CurlMultiHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Promise\Utils;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Storage;
+use Psr\Http\Message\ResponseInterface;
+
+/**
+ * Concurrent-user load test (TOR 4.4-3 "รองรับผู้ใช้งานพร้อมกันไม่น้อยกว่า 20 User", คุณลักษณะ 2.1-3 "ทดสอบ login
+ * พร้อมกัน"). For each level (default 20, 40, 60) that many virtual users, each with its own session, at the same
+ * moment: open the home page, log in with their own ทดสอบ account (loadtest:accounts), then open the dashboard
+ * pages one after another. Every request is timed. Prints a summary and saves a Markdown report under
+ * storage/app/private/loadtest/ for the acceptance documents.
+ *
+ * Run it from another machine against the real host (tell the hosting provider first), e.g.
+ *   php artisan loadtest https://msk.example.go.th --password=…
+ */
+class LoadTest extends Command
+{
+    protected $signature = 'loadtest
+        {url : the site to test, e.g. https://example.go.th}
+        {--users=20,40,60 : the concurrency levels}
+        {--password= : the password of the ทดสอบ accounts}
+        {--pages=/executive,/risk-overview,/community-map,/risk-factors,/impact-recovery,/mcr2030-kpi : pages each user opens after login}
+        {--pause=5 : seconds to wait between levels}
+        {--timeout=60 : seconds before one request counts as failed}';
+
+    protected $description = 'Simulate 20/40/60 users logging in and using the dashboard at the same time';
+
+    /** @var list<array{level: int, step: string, ms: float, ok: bool, note: string}> */
+    private array $samples = [];
+
+    /** One curl_multi handler shared by every virtual user, so their requests really run at the same time. */
+    private ?HandlerStack $stack = null;
+
+    public function handle(): int
+    {
+        $base = rtrim((string) $this->argument('url'), '/');
+        $password = (string) $this->option('password');
+        if ($password === '') {
+            $this->error('ต้องระบุ --password= (รหัสผ่านของบัญชีทดสอบ จาก loadtest:accounts)');
+
+            return self::FAILURE;
+        }
+        $levels = array_values(array_filter(array_map('intval', explode(',', (string) $this->option('users')))));
+        $pages = array_values(array_filter(array_map('trim', explode(',', (string) $this->option('pages')))));
+        if ($levels === [] || max($levels) > 99) {
+            $this->error('--users ต้องอยู่ระหว่าง 1–99 (เท่ากับจำนวนบัญชีทดสอบที่มี)');
+
+            return self::FAILURE;
+        }
+
+        $results = [];
+        foreach ($levels as $i => $level) {
+            if ($i > 0) {
+                sleep((int) $this->option('pause'));
+            }
+            $this->info("▶ {$level} ผู้ใช้พร้อมกัน …");
+            $started = microtime(true);
+            $chains = [];
+            for ($u = 1; $u <= $level; $u++) {
+                $chains[] = $this->user($base, LoadTestAccounts::email($u), $password, $pages, $level);
+            }
+            Utils::settle($chains)->wait();
+            $results[] = $this->summarise($level, microtime(true) - $started);
+        }
+
+        $headers = ['ผู้ใช้พร้อมกัน', 'คำขอ', 'ล้มเหลว', 'login สำเร็จ', 'เฉลี่ย (วินาที)', 'p95 (วินาที)', 'สูงสุด (วินาที)', 'ใช้เวลารวม (วินาที)', 'คำขอ/วินาที'];
+        $this->table($headers, array_map('array_values', $results));
+        $path = $this->report($base, $headers, $results, $pages);
+        $this->info("บันทึกรายงานที่ {$path}");
+
+        return collect($results)->every(fn ($r) => $r['failed'] === 0) ? self::SUCCESS : self::FAILURE;
+    }
+
+    /** One virtual user: home → login → each page in turn, all async so every user runs at the same time. */
+    private function user(string $base, string $email, string $password, array $pages, int $level): PromiseInterface
+    {
+        $jar = new CookieJar;
+        $client = new Client([
+            'handler' => $this->stack ??= HandlerStack::create(new CurlMultiHandler),
+            'base_uri' => $base,
+            'cookies' => $jar,
+            'allow_redirects' => false,
+            'http_errors' => false,
+            'timeout' => (int) $this->option('timeout'),
+            'headers' => ['Accept' => 'text/html', 'User-Agent' => 'msk-loadtest'],
+        ]);
+
+        $promise = $this->timed($level, 'หน้าแรก', fn () => $client->getAsync('/'), fn ($r) => $r->getStatusCode() === 200)
+            ->then(fn () => $this->timed($level, 'login', fn () => $client->postAsync('/login', [
+                'form_params' => ['email' => $email, 'password' => $password],
+                'headers' => ['X-XSRF-TOKEN' => urldecode((string) $jar->getCookieByName('XSRF-TOKEN')?->getValue())],
+            ]), fn ($r) => $r->getStatusCode() === 302 && str_contains($r->getHeaderLine('Location'), '/dashboard')));
+
+        foreach ($pages as $page) {
+            $promise = $promise->then(fn () => $this->timed($level, $page, fn () => $client->getAsync($page), fn ($r) => $r->getStatusCode() === 200));
+        }
+
+        return $promise;
+    }
+
+    /** Times one request; a failure is recorded (not thrown) so the user carries on like a real one would retry. */
+    private function timed(int $level, string $step, callable $send, callable $isOk): PromiseInterface
+    {
+        $t = microtime(true);
+
+        return $send()->then(
+            function (ResponseInterface $r) use ($level, $step, $t, $isOk) {
+                $ok = $isOk($r);
+                $this->samples[] = ['level' => $level, 'step' => $step, 'ms' => (microtime(true) - $t) * 1000, 'ok' => $ok, 'note' => $ok ? '' : 'HTTP '.$r->getStatusCode()];
+
+                return $r;
+            },
+            function ($e) use ($level, $step, $t) {
+                $this->samples[] = ['level' => $level, 'step' => $step, 'ms' => (microtime(true) - $t) * 1000, 'ok' => false, 'note' => $e instanceof TransferException ? class_basename($e) : 'error'];
+
+                return null;
+            },
+        );
+    }
+
+    private function summarise(int $level, float $seconds): array
+    {
+        $s = collect($this->samples)->where('level', $level);
+        $ms = $s->pluck('ms')->sort()->values();
+        $p95 = $ms->isEmpty() ? 0 : $ms[(int) floor(0.95 * ($ms->count() - 1))];
+
+        return [
+            'users' => $level,
+            'requests' => $s->count(),
+            'failed' => $s->where('ok', false)->count(),
+            'logins' => $s->where('step', 'login')->where('ok', true)->count().'/'.$level,
+            'avg' => round($ms->avg() / 1000, 2),
+            'p95' => round($p95 / 1000, 2),
+            'max' => round(($ms->max() ?? 0) / 1000, 2),
+            'seconds' => round($seconds, 1),
+            'rps' => round($s->count() / max($seconds, 0.001), 1),
+        ];
+    }
+
+    private function report(string $base, array $headers, array $results, array $pages): string
+    {
+        $lines = [
+            '# รายงานทดสอบผู้ใช้งานพร้อมกัน (TOR 4.4-3, คุณลักษณะ 2.1-3)',
+            '',
+            '- เว็บที่ทดสอบ: '.$base,
+            '- วันเวลา: '.now()->format('d/m/').(now()->year + 543).now()->format(' H:i').' น.',
+            '- วิธีทดสอบ: ผู้ใช้จำลองแต่ละคนมี session ของตัวเอง เริ่มพร้อมกัน เปิดหน้าแรก → เข้าสู่ระบบด้วยบัญชีทดสอบของตน → เปิดหน้า '.implode(', ', $pages).' ตามลำดับ',
+            '',
+            '| '.implode(' | ', $headers).' |',
+            '|'.str_repeat(' --- |', count($headers)),
+            ...array_map(fn ($r) => '| '.implode(' | ', $r).' |', $results),
+            '',
+            '## เวลาเฉลี่ยรายหน้า (วินาที)',
+            '',
+        ];
+        $steps = collect($this->samples)->pluck('step')->unique()->values();
+        $lines[] = '| หน้า | '.implode(' | ', array_map(fn ($r) => "{$r['users']} ผู้ใช้", $results)).' |';
+        $lines[] = '|'.str_repeat(' --- |', count($results) + 1);
+        foreach ($steps as $step) {
+            $lines[] = "| {$step} | ".implode(' | ', array_map(fn ($r) => round(collect($this->samples)->where('level', $r['users'])->where('step', $step)->avg('ms') / 1000, 2), $results)).' |';
+        }
+        $failures = collect($this->samples)->where('ok', false)->groupBy(fn ($s) => "{$s['level']} ผู้ใช้ · {$s['step']} · {$s['note']}")->map->count();
+        if ($failures->isNotEmpty()) {
+            $lines = [...$lines, '', '## คำขอที่ล้มเหลว', '', ...$failures->map(fn ($n, $k) => "- {$k}: {$n} ครั้ง")->values()];
+        }
+
+        $path = 'loadtest/'.now()->format('Ymd_His').'.md';
+        Storage::put($path, implode("\n", $lines)."\n");
+
+        return Storage::path($path);
+    }
+}

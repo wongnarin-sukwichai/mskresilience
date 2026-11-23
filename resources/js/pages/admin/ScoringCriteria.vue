@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import type { CriteriaSection, CriteriaTab, CriteriaWeights, ScoringCriteriaSet } from '@/types';
 import { Head, router, useForm } from '@inertiajs/vue3';
@@ -243,7 +244,7 @@ const inputClass =
             <!-- Set list -->
             <div class="h-fit overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm xl:col-span-1">
                 <div class="border-b border-slate-100 p-5">
-                    <h2 class="font-semibold text-slate-800">ชุดเกณฑ์คะแนน</h2>
+                    <h2 class="font-semibold text-slate-800">ชุดเกณฑ์คะแนน<TorRef :refs="['4.1.1(1)-3', 'คุณลักษณะ 2.2-6']" /></h2>
                     <p class="mt-0.5 text-sm text-slate-400">ทั้งหมด {{ sets.length }} ชุด · แต่ละชุดใช้กับข้อมูลตามปีงบประมาณ</p>
                 </div>
                 <ul class="divide-y divide-slate-100">

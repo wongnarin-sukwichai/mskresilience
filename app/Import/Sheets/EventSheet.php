@@ -74,6 +74,11 @@ class EventSheet extends TableSheet
         return $this->query()->where('event_id', $row['EVENT_ID'])->first();
     }
 
+    protected function attributesTaken(array $attributes): bool
+    {
+        return $this->query()->where('event_id', $attributes['event_id'])->exists();
+    }
+
     protected function newRecordAttributes(array $row): array
     {
         return ['event_id' => $row['EVENT_ID'], 'community_id' => $row['COMMUNITY_ID']];

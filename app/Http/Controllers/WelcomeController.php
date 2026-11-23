@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Scoring\RiskEngine;
+use App\Support\Settings;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,6 +22,8 @@ class WelcomeController extends Controller
 
         return Inertia::render('Welcome', [
             'openLogin' => (bool) session('openLogin'),
+            // The "ข้อมูลสมมุติ" banner (owner 2026-11-23): on while the site runs on mock data, off at go-live.
+            'mockNotice' => Settings::get('welcome_mock_notice') ? Settings::get('welcome_mock_notice_text') : null,
             'risk' => $result ? [
                 'dataDate' => $result['city']['dataDate'],
                 'city' => [

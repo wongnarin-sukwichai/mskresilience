@@ -104,3 +104,29 @@ html {
 .fade-leave-to {
     opacity: 0;
 }
+
+/* บันทึก PDF / print (TOR 4.4-4): A4, no screen-only chrome, every animation at its final state, and the colours of
+   the charts and badges kept (browsers drop backgrounds by default). */
+@media print {
+    @page {
+        size: A4;
+        margin: 12mm;
+    }
+    *,
+    *::before,
+    *::after {
+        transition: none !important;
+        animation: none !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .sticky {
+        position: static !important;
+    }
+    .print-break-before {
+        break-before: page;
+    }
+    .print-keep {
+        break-inside: avoid;
+    }
+}

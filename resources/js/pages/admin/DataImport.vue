@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TorRef from '@/components/admin/TorRef.vue';
 import { defaultWorkGroupTheme, workGroupIcons, workGroupThemes } from '@/data/workGroupIcons';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import type { SharedData } from '@/types';
@@ -23,7 +24,7 @@ const iconOf = (value: string) => workGroupIcons[value] ?? 'fa-solid fa-file-exc
 
     <AdminLayout title="นำเข้าข้อมูล">
         <div class="mb-6 border-l-4 border-blue-600 pl-4">
-            <h1 class="text-2xl font-bold text-slate-800">นำเข้าข้อมูล</h1>
+            <h1 class="text-2xl font-bold text-slate-800">นำเข้าข้อมูล<TorRef :refs="['4.1.1(2)-1', 'คุณลักษณะ 2.3-1']" /></h1>
             <p class="mt-1 text-sm text-slate-500">
                 เลือกงานที่ต้องการนำเข้าข้อมูล
                 <template v-if="isAdmin">· ผู้ดูแลระบบนำเข้าได้ทุกงาน</template>

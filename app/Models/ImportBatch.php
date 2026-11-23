@@ -32,6 +32,23 @@ class ImportBatch extends Model
         'file_deleted_at',
         'file_deleted_by',
         'deleted_file_bytes',
+        'source',
+        'status',
+        'payload',
+        'reviewed_by',
+        'reviewed_at',
+        'review_note',
+    ];
+
+    /** Same defaults as the columns, so a just-created batch has them without a refresh. */
+    protected $attributes = ['source' => 'file', 'status' => 'active'];
+
+    /** Where the batch came from: an uploaded file, or one change in the web edit form (App\Import\RecordEditor). */
+    public const SOURCES = [
+        'file' => 'นำเข้าไฟล์',
+        'web_add' => 'เพิ่มในเว็บ',
+        'web_edit' => 'แก้ไขในเว็บ',
+        'web_delete' => 'ลบในเว็บ',
     ];
 
     /**
@@ -45,7 +62,35 @@ class ImportBatch extends Model
             'work_group' => WorkGroup::class,
             'cancelled_at' => 'datetime',
             'file_deleted_at' => 'datetime',
+            'reviewed_at' => 'datetime',
+            'payload' => 'array',
         ];
+    }
+
+    public function isPending(): bool
+    {
+        return $this->status === 'pending' && ! $this->isCancelled();
+    }
+
+    public function isRejected(): bool
+    {
+        return $this->status === 'rejected';
+    }
+
+    /** Whether its data is (or was, until cancelled) in the data tables. */
+    public function isApplied(): bool
+    {
+        return $this->status === 'active';
+    }
+
+    public function isWeb(): bool
+    {
+        return $this->source !== 'file';
+    }
+
+    public function reviewedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 
     public function fileDeletedBy(): BelongsTo

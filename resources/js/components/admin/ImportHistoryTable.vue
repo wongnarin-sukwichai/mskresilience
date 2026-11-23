@@ -26,6 +26,14 @@ export type ImportHistoryRow = {
     deletedFileBytes: number | null;
     canCancel: boolean;
     cancelBlocked: string | null;
+    /** 'file', or a web-form change: 'web_add' | 'web_edit' | 'web_delete' (App\Import\RecordEditor). */
+    source: string;
+    sourceLabel: string;
+    /** 'active' | 'pending' (approval mode, waiting for an admin) | 'rejected'. Cancelled is cancelledAt. */
+    status: string;
+    reviewedBy: string | null;
+    reviewedAt: string | null;
+    reviewNote: string | null;
 };
 export type Paginated<T> = {
     data: T[];
@@ -46,6 +54,8 @@ const props = defineProps<{
     selectable?: boolean;
     // จัดการประวัตินำเข้า only: the ขนาดไฟล์ column.
     showFileSize?: boolean;
+    // อนุมัติข้อมูล (admin): อนุมัติ / ไม่อนุมัติ buttons on pending rows (TOR 4.1.1(6)-1).
+    reviewable?: boolean;
 }>();
 
 function formatBytes(bytes: number) {
@@ -56,7 +66,7 @@ function formatBytes(bytes: number) {
 }
 const selected = defineModel<number[]>('selected', { default: () => [] });
 
-const selectableIds = computed(() => props.batches.data.filter((h) => !h.fileDeletedAt).map((h) => h.id));
+const selectableIds = computed(() => props.batches.data.filter((h) => h.source === 'file' && !h.fileDeletedAt).map((h) => h.id));
 const allSelected = computed(() => selectableIds.value.length > 0 && selectableIds.value.every((id) => selected.value.includes(id)));
 
 function toggleAll() {
@@ -79,6 +89,45 @@ const viewingId = ref<number | null>(null);
 
 const cancelTarget = ref<ImportHistoryRow | null>(null);
 const cancelling = ref(false);
+
+// Approval (admin): approve saves the data after checking it again; reject needs a reason, shown to the importer.
+const approveTarget = ref<ImportHistoryRow | null>(null);
+const rejectTarget = ref<ImportHistoryRow | null>(null);
+const rejectNote = ref('');
+const reviewing = ref(false);
+
+function approveBatch() {
+    if (!approveTarget.value) return;
+    router.post(
+        route('import-approvals.approve', approveTarget.value.id),
+        {},
+        {
+            preserveScroll: true,
+            onStart: () => (reviewing.value = true),
+            onFinish: () => {
+                reviewing.value = false;
+                approveTarget.value = null;
+            },
+        },
+    );
+}
+
+function rejectBatch() {
+    if (!rejectTarget.value || !rejectNote.value.trim()) return;
+    router.post(
+        route('import-approvals.reject', rejectTarget.value.id),
+        { note: rejectNote.value },
+        {
+            preserveScroll: true,
+            onStart: () => (reviewing.value = true),
+            onFinish: () => {
+                reviewing.value = false;
+                rejectTarget.value = null;
+                rejectNote.value = '';
+            },
+        },
+    );
+}
 
 function cancelBatch() {
     if (!cancelTarget.value) return;
@@ -131,7 +180,7 @@ function cancelBatch() {
                     >
                         <td v-if="selectable" class="py-2 pr-2">
                             <input
-                                v-if="!h.fileDeletedAt"
+                                v-if="h.source === 'file' && !h.fileDeletedAt"
                                 type="checkbox"
                                 class="h-4 w-4 rounded border-slate-300 text-blue-600"
                                 :checked="selected.includes(h.id)"
@@ -150,6 +199,12 @@ function cancelBatch() {
                         <td class="whitespace-nowrap py-2 pr-4">{{ formatDateTime(h.createdAt) }}</td>
                         <td class="py-2 pr-4">{{ h.user ?? '–' }}</td>
                         <td class="max-w-xs py-2 pr-4">
+                            <span
+                                v-if="h.source !== 'file'"
+                                class="mb-0.5 inline-block rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700"
+                            >
+                                <i class="fa-solid fa-pen-to-square mr-1"></i>{{ h.sourceLabel }}
+                            </span>
                             <span class="block truncate" :class="{ 'line-through': h.cancelledAt }" :title="h.filename">{{ h.filename }}</span>
                             <span
                                 v-if="h.fileDeletedAt"
@@ -177,9 +232,49 @@ function cancelBatch() {
                             >
                                 ยกเลิกแล้ว
                             </span>
-                            <span v-else class="rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">ใช้งาน</span>
+                            <span v-else-if="h.status === 'pending'" class="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                <i class="fa-solid fa-hourglass-half mr-1"></i>รออนุมัติ
+                            </span>
+                            <template v-else-if="h.status === 'rejected'">
+                                <span
+                                    class="cursor-help rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
+                                    :title="`ไม่อนุมัติโดย ${h.reviewedBy ?? '–'}${h.reviewedAt ? ' เมื่อ ' + formatDateTime(h.reviewedAt) : ''}`"
+                                >
+                                    ไม่อนุมัติ
+                                </span>
+                                <p v-if="h.reviewNote" class="mt-0.5 max-w-[12rem] truncate text-[11px] text-red-600" :title="h.reviewNote">
+                                    {{ h.reviewNote }}
+                                </p>
+                            </template>
+                            <span
+                                v-else
+                                class="rounded-md bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"
+                                :title="
+                                    h.reviewedBy
+                                        ? `อนุมัติโดย ${h.reviewedBy}${h.reviewedAt ? ' เมื่อ ' + formatDateTime(h.reviewedAt) : ''}`
+                                        : undefined
+                                "
+                            >
+                                ใช้งาน<i v-if="h.reviewedBy" class="fa-solid fa-user-check ml-1 text-[10px]"></i>
+                            </span>
                         </td>
                         <td class="whitespace-nowrap py-2 text-right">
+                            <template v-if="reviewable && h.status === 'pending' && !h.cancelledAt">
+                                <button
+                                    type="button"
+                                    class="mr-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                                    @click="approveTarget = h"
+                                >
+                                    <i class="fa-solid fa-check mr-1"></i>อนุมัติ
+                                </button>
+                                <button
+                                    type="button"
+                                    class="mr-1.5 whitespace-nowrap rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50"
+                                    @click="rejectTarget = h"
+                                >
+                                    <i class="fa-solid fa-xmark mr-1"></i>ไม่อนุมัติ
+                                </button>
+                            </template>
                             <button
                                 type="button"
                                 title="ดูข้อมูลที่นำเข้าจากไฟล์นี้"
@@ -196,7 +291,7 @@ function cancelBatch() {
                                 class="whitespace-nowrap rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 disabled:hover:bg-transparent"
                                 @click="cancelTarget = h"
                             >
-                                <i class="fa-solid fa-rotate-left mr-1"></i>ยกเลิก
+                                <i class="fa-solid fa-rotate-left mr-1"></i>{{ h.status === 'pending' ? 'ถอนคำขอ' : 'ยกเลิก' }}
                             </button>
                         </td>
                     </tr>
@@ -244,13 +339,15 @@ function cancelBatch() {
 
     <ConfirmDialog
         :open="!!cancelTarget"
-        :title="`ยกเลิกรายการนำเข้า #${cancelTarget?.id ?? ''}?`"
+        :title="cancelTarget?.status === 'pending' ? `ถอนคำขอ #${cancelTarget?.id ?? ''}?` : `ยกเลิกรายการ #${cancelTarget?.id ?? ''}?`"
         :message="
-            cancelTarget
-                ? `ข้อมูล${cancelTarget.group.label} ${cancelTarget.rowCount} แถวจากไฟล์ ${cancelTarget.filename} จะถูกนำออก` +
-                  (cancelTarget.replacedCount ? ` และ ${cancelTarget.replacedCount} แถวที่เคยทับไว้จะกลับเป็นค่าเดิม` : '') +
-                  ' ประวัติจะยังอยู่ พร้อมชื่อผู้ยกเลิก'
-                : ''
+            cancelTarget?.status === 'pending'
+                ? 'คำขอนี้ยังไม่ได้รับอนุมัติ ข้อมูลยังไม่เข้าระบบ เมื่อถอนคำขอแล้วผู้ดูแลระบบจะไม่เห็นรายการนี้ให้อนุมัติอีก'
+                : cancelTarget
+                  ? `ข้อมูล${cancelTarget.group.label} ${cancelTarget.rowCount} แถวจากไฟล์ ${cancelTarget.filename} จะถูกนำออก` +
+                    (cancelTarget.replacedCount ? ` และ ${cancelTarget.replacedCount} แถวที่เคยทับไว้จะกลับเป็นค่าเดิม` : '') +
+                    ' ประวัติจะยังอยู่ พร้อมชื่อผู้ยกเลิก'
+                  : ''
         "
         confirm-label="ยืนยันยกเลิก"
         processing-label="กำลังยกเลิก..."
@@ -258,4 +355,57 @@ function cancelBatch() {
         @confirm="cancelBatch"
         @cancel="cancelTarget = null"
     />
+
+    <ConfirmDialog
+        :open="!!approveTarget"
+        :title="`อนุมัติรายการ #${approveTarget?.id ?? ''}?`"
+        :message="
+            approveTarget
+                ? `${approveTarget.sourceLabel} ${approveTarget.group.label} ${approveTarget.rowCount} แถว (${approveTarget.filename}) โดย ${approveTarget.user ?? '–'} ระบบจะตรวจข้อมูลอีกครั้งแล้วบันทึกเข้าระบบทันที`
+                : ''
+        "
+        confirm-label="ยืนยันอนุมัติ"
+        processing-label="กำลังบันทึก..."
+        :processing="reviewing"
+        @confirm="approveBatch"
+        @cancel="approveTarget = null"
+    />
+
+    <!-- Reject needs a reason, which the importer sees in their history. -->
+    <div v-if="rejectTarget" class="fixed inset-0 z-[105] flex items-center justify-center bg-slate-900/40 p-4" @click.self="rejectTarget = null">
+        <div class="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div class="bg-blue-600 px-6 py-4">
+                <h3 class="text-base font-semibold text-white">ไม่อนุมัติรายการ #{{ rejectTarget.id }}</h3>
+            </div>
+            <div class="space-y-3 px-6 py-5 text-sm">
+                <p class="text-slate-600">
+                    {{ rejectTarget.sourceLabel }} {{ rejectTarget.group.label }} {{ rejectTarget.rowCount }} แถว ({{ rejectTarget.filename }}) โดย
+                    {{ rejectTarget.user ?? '–' }}
+                </p>
+                <label class="block">
+                    <span class="mb-1.5 block text-xs font-medium text-slate-600">เหตุผล (ผู้นำเข้าจะเห็นข้อความนี้)</span>
+                    <textarea
+                        v-model="rejectNote"
+                        rows="3"
+                        maxlength="500"
+                        class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        placeholder="เช่น ตัวเลขผู้สูงอายุของชุมชน R005 สูงผิดปกติ กรุณาตรวจสอบ"
+                    ></textarea>
+                </label>
+            </div>
+            <div class="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
+                <button type="button" class="rounded-xl px-5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100" @click="rejectTarget = null">
+                    ยกเลิก
+                </button>
+                <button
+                    type="button"
+                    :disabled="!rejectNote.trim() || reviewing"
+                    class="rounded-xl bg-red-600 px-5 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="rejectBatch"
+                >
+                    {{ reviewing ? 'กำลังบันทึก...' : 'ยืนยันไม่อนุมัติ' }}
+                </button>
+            </div>
+        </div>
+    </div>
 </template>

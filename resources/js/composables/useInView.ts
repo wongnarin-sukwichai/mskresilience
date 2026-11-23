@@ -1,6 +1,7 @@
 // True once the element has scrolled into view, and it stays true. Dashboard animations wait for it, so charts
 // below the fold animate when the user reaches them, not unseen on page load (owner 2026-11-10).
-import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
+import { printing } from './usePrint';
 
 export function useInView(target: Ref<Element | null>, threshold = 0.25): Ref<boolean> {
     const inView = ref(false);
@@ -23,6 +24,8 @@ export function useInView(target: Ref<Element | null>, threshold = 0.25): Ref<bo
         observer.observe(target.value);
     });
     onBeforeUnmount(() => observer?.disconnect());
+    // Printing shows everything, so anything waiting to come into view counts as in view.
+    watch(printing, (on) => on && (inView.value = true));
 
     return inView;
 }

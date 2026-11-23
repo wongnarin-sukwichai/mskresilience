@@ -29,7 +29,7 @@ interface PublicRisk {
 // Authenticated-state header chip — without this, the page showed a generic "เข้าสู่ระบบ" button no matter
 // who was logged in, so there was no way to see you were signed in as a different account, or to log out.
 const page = usePage<SharedData>();
-const props = defineProps<{ openLogin?: boolean; risk: PublicRisk | null }>();
+const props = defineProps<{ openLogin?: boolean; risk: PublicRisk | null; mockNotice?: string | null }>();
 const authUser = computed(() => page.props.auth.user);
 const canAccessAdminPanel = computed(() => !!authUser.value && ['admin', 'staff'].includes(authUser.value.role));
 const userMenuOpen = ref(false);
@@ -475,19 +475,22 @@ onUnmounted(() => {
 
         <!-- Top Bar -->
         <header
-            class="fixed left-0 top-0 z-[60] flex h-[72px] w-full items-center justify-between border-b border-slate-200 bg-white/95 px-6 shadow-sm backdrop-blur-md transition-all lg:px-8"
+            class="fixed left-0 top-0 z-[60] flex h-[72px] w-full items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-3 shadow-sm backdrop-blur-md transition-all sm:px-6 lg:px-8"
         >
-            <div class="flex shrink-0 items-center gap-4">
-                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-inner">
-                    <i class="fa-solid fa-shield-halved text-xl"></i>
+            <!-- min-w-0 + truncate: on phones the title shrinks instead of pushing the login button off-screen. -->
+            <div class="flex min-w-0 items-center gap-2.5 sm:gap-4">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-inner sm:h-11 sm:w-11">
+                    <i class="fa-solid fa-shield-halved text-base sm:text-xl"></i>
                 </div>
-                <div class="flex flex-col">
-                    <h1 class="whitespace-nowrap text-[17px] font-bold leading-tight text-slate-800 lg:text-lg">ระบบบริหารข้อมูลความเสี่ยง</h1>
-                    <p class="mt-0.5 whitespace-nowrap text-[11px] font-medium text-slate-500 lg:text-xs">ความเปราะบางของชุมชน อ.เมือง จ.มหาสารคาม</p>
+                <div class="flex min-w-0 flex-col">
+                    <h1 class="truncate text-sm font-bold leading-tight text-slate-800 sm:text-[17px] lg:text-lg">ระบบบริหารข้อมูลความเสี่ยง</h1>
+                    <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500 sm:text-[11px] lg:text-xs">
+                        ความเปราะบางของชุมชน อ.เมือง จ.มหาสารคาม
+                    </p>
                 </div>
             </div>
 
-            <div class="flex shrink-0 items-center gap-3 lg:gap-5">
+            <div class="flex shrink-0 items-center gap-2 sm:gap-3 lg:gap-5">
                 <!-- Map Style Toggle -->
                 <div class="hidden shrink-0 items-center rounded-xl border border-slate-200 bg-slate-100/80 p-1 md:flex">
                     <button
@@ -527,10 +530,11 @@ onUnmounted(() => {
                     v-if="!authUser"
                     type="button"
                     @click="openLoginModal"
-                    class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-600 px-6 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 lg:text-sm"
+                    aria-label="เข้าสู่ระบบ"
+                    class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 sm:px-6 lg:text-sm"
                 >
                     <i class="fa-solid fa-user-lock"></i>
-                    เข้าสู่ระบบ
+                    <span class="hidden min-[400px]:inline">เข้าสู่ระบบ</span>
                 </button>
 
                 <div v-else ref="userMenuRef" class="relative shrink-0">
@@ -575,6 +579,20 @@ onUnmounted(() => {
                 </div>
             </div>
         </header>
+
+        <!-- Mock-data notice (owner 2026-11-23): on while the site runs on demo data; ตั้งค่าทั่วไป turns it off. -->
+        <div
+            v-if="mockNotice"
+            role="note"
+            class="pointer-events-none fixed left-1/2 top-[80px] z-[55] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 sm:w-auto"
+        >
+            <p
+                class="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/95 px-4 py-2 text-xs font-semibold text-amber-800 shadow-md backdrop-blur-md sm:text-sm"
+            >
+                <i class="fa-solid fa-triangle-exclamation mt-0.5 text-amber-500"></i>
+                <span>{{ mockNotice }}</span>
+            </p>
+        </div>
 
         <!-- Floating Sidebar -->
         <aside
@@ -819,45 +837,7 @@ onUnmounted(() => {
                         <p v-if="loginForm.errors.password" class="mt-1.5 text-xs text-red-600">{{ loginForm.errors.password }}</p>
                     </div>
 
-                    <div class="relative my-5">
-                        <div class="absolute inset-0 flex items-center">
-                            <div class="w-full border-t border-slate-200"></div>
-                        </div>
-                        <div class="relative flex justify-center text-sm">
-                            <span class="bg-white px-3 text-xs font-medium text-slate-400">หรือ</span>
-                        </div>
-                    </div>
-
-                    <div>
-                        <button
-                            type="button"
-                            disabled
-                            title="เร็ว ๆ นี้"
-                            class="flex w-full cursor-not-allowed items-center justify-center gap-3 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-400 opacity-60"
-                        >
-                            <svg class="h-4 w-4" viewBox="0 0 24 24">
-                                <path
-                                    fill="#EA4335"
-                                    d="M12 5.04c1.62 0 3.08.56 4.22 1.65l3.15-3.15C17.45 1.74 14.93 1 12 1 7.37 1 3.4 3.66 1.48 7.55l3.82 2.96c.92-2.76 3.5-4.47 6.7-4.47z"
-                                />
-                                <path
-                                    fill="#4285F4"
-                                    d="M23.49 12.27c0-.81-.07-1.59-.2-2.34H12v4.44h6.44c-.28 1.47-1.11 2.71-2.35 3.54l3.66 2.84c2.14-1.97 3.38-4.87 3.38-8.48z"
-                                />
-                                <path
-                                    fill="#FBBC05"
-                                    d="M5.3 14.91c-.24-.72-.38-1.49-.38-2.28 0-.79.14-1.56.38-2.28L1.48 7.39C.53 9.3 0 11.45 0 13.73c0 2.28.53 4.43 1.48 6.34l3.82-3.16z"
-                                />
-                                <path
-                                    fill="#34A853"
-                                    d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.66-2.84c-1.01.68-2.31 1.08-3.9 1.08-3.2 0-5.78-1.71-6.75-4.47L1.48 16.82C3.4 20.71 7.37 23 12 23z"
-                                />
-                            </svg>
-                            เข้าระบบด้วยบัญชี @gmail
-                        </button>
-                    </div>
-
-                    <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+                    <div class="mt-5 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
                         <button
                             type="button"
                             @click="closeLoginModal"

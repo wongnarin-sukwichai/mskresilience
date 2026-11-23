@@ -46,7 +46,7 @@ CI (`.github/workflows/`) runs `vendor/bin/pint`, `npm run format`, `npm run lin
 
 **Auth/session props**: `app/Http/Middleware/HandleInertiaRequests.php` shares props (e.g. `auth.user`) available in every page via `$page.props` / `usePage()`. It also shares `flash.status` and `flash.error` (the session `status`/`error` flashes). Admin controllers set them with `back()->with('status', 'ข้อความ…')` for success, or `back()->with('error', …)` when an action is refused. `AdminLayout.vue` shows them as a top-right toast, green or red. For refusals, use `error` rather than `abort(403)`, so the admin isn't dumped onto an error page. AdminLayout listens to `router.on('success')` instead of watching the prop, so two identical messages in a row still each show. Every admin page gets this toast automatically, so don't add page-local toasts.
 
-**Auth policy — self-registration is disabled.** `routes/auth.php` has no `register` routes (removed intentionally); `RegisteredUserController` and `pages/auth/Register.vue` still exist in the codebase but are unrouted/unlinked. Accounts are provisioned by an admin via `php artisan db:seed` (`database/seeders/DatabaseSeeder.php` seeds `test@example.com` / `password` as `member`, plus the real admin account below — replace/remove the test account before any real deployment). Login/logout/password-reset/email-verification all work normally through the standard Laravel session guard. **There is no separate login page** (owner decision 2026-11-03): `GET /login` (`AuthenticatedSessionController::create`) redirects to `/` and flashes `openLogin`, so `Welcome.vue` opens its login modal on mount. It also reflashes the session, so a `status` (e.g. after a password reset) reaches the home page, where it shows as a toast. `lang/th/passwords.php` keeps that message Thai. The `login` route name must stay: the `auth` middleware redirects guests to it, and the modal POSTs to it. `pages/auth/Login.vue` is now unrouted, like `Register.vue`. `Welcome.vue`'s login modal (email+password, "ลืมรหัสผ่าน?" switches the same modal to a password-reset-request form) posts to these same routes via Inertia's `useForm` — it is a real auth client, not a mock. The modal's "เข้าระบบด้วยบัญชี @gmail" button is intentionally disabled (`disabled`, no handler) — Google/Socialite login was explicitly descoped, not forgotten; wiring it up needs `composer require laravel/socialite`, real Google OAuth credentials in `.env`, and a decision on whether Google sign-in may auto-create new accounts (it should probably match the same "no self-service account creation" policy as password login, but that's a product decision to confirm, not assume).
+**Auth policy — self-registration is disabled.** `routes/auth.php` has no `register` routes (removed intentionally); `RegisteredUserController` and `pages/auth/Register.vue` still exist in the codebase but are unrouted/unlinked. Accounts are provisioned by an admin via `php artisan db:seed` (`database/seeders/DatabaseSeeder.php` seeds `test@example.com` / `password` as `member`, plus the real admin account below — replace/remove the test account before any real deployment). Login/logout/password-reset/email-verification all work normally through the standard Laravel session guard. **There is no separate login page** (owner decision 2026-11-03): `GET /login` (`AuthenticatedSessionController::create`) redirects to `/` and flashes `openLogin`, so `Welcome.vue` opens its login modal on mount. It also reflashes the session, so a `status` (e.g. after a password reset) reaches the home page, where it shows as a toast. `lang/th/passwords.php` keeps that message Thai. The `login` route name must stay: the `auth` middleware redirects guests to it, and the modal POSTs to it. `pages/auth/Login.vue` is now unrouted, like `Register.vue`. `Welcome.vue`'s login modal (email+password, "ลืมรหัสผ่าน?" switches the same modal to a password-reset-request form) posts to these same routes via Inertia's `useForm` — it is a real auth client, not a mock. The modal had a disabled "เข้าระบบด้วยบัญชี @gmail" button; the owner had it **removed** on 2026-11-23. Google/Socialite login is descoped. If it ever comes back, it needs `composer require laravel/socialite`, Google OAuth credentials, and a decision on whether Google sign-in may create accounts (it should probably follow the same "no self-service account creation" policy).
 
 **Roles**: `App\Enums\UserRole` (`admin` | `staff` | `member`), stored as a plain `string` column on `users` (`role`, default `member`), cast to the enum on the `User` model. Route-level gating uses the `role:` middleware alias (`App\Http\Middleware\EnsureUserHasRole`, registered in `bootstrap/app.php`) — e.g. `Route::...->middleware(['auth', 'verified', 'role:admin,staff'])`. `User::canAccessAdminPanel()` is the **single source of truth** for "can this user reach `/dashboard`" (all three roles as of the current permission model — see the per-menu breakdown below) — both `AuthenticatedSessionController::store()` (post-login redirect) and `AppServiceProvider::boot()` (`RedirectIfAuthenticated::redirectUsing(...)`, for the `guest` middleware's "already logged in" redirect on `/login`) call it, and must keep calling it rather than re-deriving the role check inline. **This split was a real bug once**: Laravel's default `guest`-middleware redirect always targets `route('dashboard')` if it exists, with no regard for role — an already-logged-in member hitting `/login` (e.g. to switch accounts) got bounced straight into a 403 with their new credentials never even processed, and no visible way to log out to recover, since `Welcome.vue`'s header didn't show auth state at all. Both are now fixed (role-aware redirect + `Welcome.vue` shows a user chip/logout when `auth.user` is set) — if you add another role-gated route, ask whether the same two spots need updating. Seeded accounts: `test@example.com` / `password` (member), `wongnarin.s@msu.ac.th` / `w123` and `thayukorn.p@msu.ac.th` / `1234` (both admin, real accounts requested by the project owner, 2026-11-10 for the second — rotate both passwords before production).
 
@@ -142,7 +142,7 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
     - The previous round = engine `previousInputs` (each community as of the day before its newest data) + the kpi record on or before that cutoff. The engine result now also carries raw `inputs`, `previousInputs` and `previousCutoff`; controllers must never send `inputs` to the page wholesale.
     - The KPI table that page 5's picture showed lives here.
   - **MCR tab:** `App\Scoring\McrEvidence` encodes E1–E10 from `MCR2030_Alignment_Evidence_Community_v3.docx` as evidence topics. Each Essential is full / partial / none, with a generated "ระบบพบข้อมูลเกี่ยวกับ…" sentence. **Never a score** (doc note 4).
-    - RESPONSIBLE_AGENCY (E1) has **no import column**, so E1 is at most "มีบางส่วน". Don't invent it.
+    - RESPONSIBLE_AGENCY (E1) has no import column. **Client answer 2026-11-23:** check the กลุ่มงาน split instead. E1 "การกำหนดหน่วยงานรับผิดชอบ" is found when the community's data in the round came in through the กลุ่มงาน (`McrEvidence::IMPORTED_BY`, filled by `Mcr2030KpiController::importedBy()` from the engine's `sources` + KPI + events), and the sentence names those groups. Don't add a column.
     - C4_4 empty doesn't count against E6/E7 (`naOk`).
     - Event-based topics come from the community's events up to the as-of date.
     - City view = the count of communities per status, with chips for the topics found and missing.
@@ -185,8 +185,9 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
 - **Panel with a community selected:**
   - area facts, the score with Δ and level, and the dominant hazard;
   - 5 hazard `ScoreBar`s;
-  - then, for the selected hazard (or the community's dominant one under ภัยรวม): E count/%, key groups, gaps (V_WARNING, V_INFRA_h), C4/C5*/C6_h/C7_h/C8 + C_RAW;
-  - response hours, RECOVERY_AVG, and a link to page 4 (`risk-factors?community=CODE`, which page 4 should honor).
+  - the HEVC trend and the R1–R5 radar (phase 2);
+  - response hours, RECOVERY_AVG, and a link to page 4: "ดูปัจจัยเสี่ยง E / V / C ของชุมชนนี้" → `risk-factors?community=CODE&hazard=<selected hazard, or the dominant one under ภัยรวม>&year=…`.
+  - **No E/V/C detail here any more** (owner 2026-11-23, after a duplicate-content review). The panel used to repeat page 4: E count/%, key groups, gaps V_WARNING/V_INFRA_h, C4–C8 and C_RAW. It now leaves that to page 4. The controller stopped sending `counts`/`groups` to this page. Don't re-add the block; link to page 4 instead.
 - **Animation (page 3):** polygon fills fade through the `.community-zone` CSS transition (Leaflet's path `className`). `components/admin/ScoreBar.vue` is the reusable tweened horizontal bar.
 
 **หน้า 4 ปัจจัยความเสี่ยง** (`RiskFactorsController` + `pages/admin/RiskFactors.vue`, owner-approved 2026-11-10):
@@ -317,6 +318,139 @@ Custom toggle switches (`role="switch"` buttons) need an explicit `left-0.5` anc
   - A row click opens a menu to page 3/4 with `?community=&year=B`.
 - **Owner design decisions (keep):** no free what-if criteria choice (each year uses its configured sets). No color-only meaning: always an icon/text too. Fewer than 2 fiscal years shows an empty state.
 - **Dev DB (2026-11-11):** has only FY 2568, so the real page shows the empty state until a second year is imported.
+
+**TOR rework (from 2026-11-23).** The owner compared the system with the municipality's TOR (`public/file/tor/*.pdf`, a scanned 15-page PDF). The full gap list, every decision and the phase plan are in memory (`project_tor_gap_decisions_2026_11_23`). **Every new feature must name the TOR clause it answers** with `<TorRef :refs="[…]" />` after its heading. Numbering:
+- "4.1.1(3)-1" = scope of work (TOR pp. 4–6).
+- "คุณลักษณะ 2.4-1" = the spec tables (pp. 7–9).
+- "4.4-3", "11.4" and so on.
+
+**Phase 0 (built 2026-11-23):**
+- **Engine cache** (`App\Scoring\EngineCache`, `config/scoring.php`, TOR 4.4-3). `RiskEngine::run()` results are kept, gzip+base64, in the default cache store until the data changes. `AppServiceProvider` flushes on `saved`/`deleted` of every record model plus Community, ScoringCriteriaSet and ImportBatch (again after commit). **A new data table must be added to that list.**
+  - The cache is off in tests (`RISK_ENGINE_CACHE=false` in phpunit.xml), because tests write with `DB::table()`. `EngineCacheTest` turns it on.
+  - Measured on dev: 143 ms → 11 ms.
+- **Settings** (`App\Support\Settings`, the single source of keys/labels/defaults; table `app_settings` with a numeric id because activity_log needs one). The admin page is **ตั้งค่าทั่วไป** (`/system-settings`). Keys so far: `show_tor_refs`, plus `welcome_mock_notice` and its text.
+  - `showTorRefs` is shared to logged-in users.
+  - `WelcomeController` sends `mockNotice`: the amber "ข้อมูลสมมุติ" banner on the public home page, which stays on until go-live.
+  - Later phases add their keys there (approval mode, flag thresholds, AI mode).
+- **Audit trail** (`spatie/laravel-activitylog`; TOR 4.1.1(2)-4, คุณลักษณะ 2.1-6).
+  - `LogsActivity` is on User (name/email/role/work_groups, **never the password**: an admin-set password is logged as event `password` without a value), Community, ScoringCriteriaSet (weights) and AppSetting.
+  - Import actions log through `App\Import\ImportAudit` (imported / cancelled / file_deleted, with file and row counts). Rows aren't logged one by one: the batch plus `import_replaced_rows` hold the values.
+  - **บันทึกการแก้ไข** (`/audit-log`, `AuditLogController` + `App\Support\AuditPresenter`, which gives Thai labels and an old → new diff where weights are compared leaf by leaf).
+  - Any new way to change data must log here.
+- **Login log** (`login_logs`, `LoginLog::record()` from the auth event listeners in AppServiceProvider: login / logout / failed with the typed email). Logout is only logged on a click.
+  - **ประวัติการเข้าใช้งาน** (`/login-logs`, `LoginLogController`) has the log plus **ผู้ใช้ที่ออนไลน์ขณะนี้**: sessions active within 5 min, read from the database session table, one row per user, refreshed every 15 s. It is the screen for the 20-users acceptance test.
+- `components/admin/Pager.vue` is a reusable prev/next pager for Laravel paginators.
+
+**Phase 1 (built 2026-11-23):**
+- **CSV import** (TOR 4.1.1(2)-1, 4.4-2).
+  - `App\Import\SpreadsheetGrid::load()` is the single file reader for ImportValidator and the viewer. CSV gets BOM stripping and Thai TIS-620/CP874 → UTF-8, and the delimiter is detected from `, ; tab`.
+  - Upload accepts xlsx/xls/csv (the `extensions` rule plus `mimes`). Tmp and kept files keep the real extension, because the reader picks Excel or CSV by it.
+  - `/data-import/{group}/template?format=csv` gives a header-only UTF-8 BOM file.
+  - `ImportValidator::validateGrid()` runs the checks on a grid that didn't come from a file.
+- **import_batches now has `source` and `status`:**
+  - `source` is `file` | `web_add` | `web_edit` | `web_delete`.
+  - `status` is `active` | `pending` | `rejected`; cancelled is still `cancelled_at`.
+  - Also `payload` (a web change's row, before-values and label), `reviewed_by/at`, `review_note`. `original_filename`/`stored_path` are nullable (web batches have no file).
+  - `BatchApplier::apply()` checks a batch again with the import rules and saves it. It is used for approval, and for web changes applied at once.
+- **Approval mode** (TOR 4.1.1(6)-1, setting `import_requires_approval`, **off by default**; whether the client wants it on is client question 20).
+  - While it's on, a **staff** import or web change becomes `pending` and nothing is saved. Admins never wait.
+  - **อนุมัติข้อมูล** (`/import-approvals`, admin, child of จัดการข้อมูล with a pending-count badge, shared `pendingApprovals`) approves (re-validated, then saved) or rejects with a required reason.
+  - Staff may withdraw a pending request at any time (cancel = withdraw, no data change).
+- **แก้ไขข้อมูล** (`/data-records`, admin+staff, `DataRecordController` + `App\Import\RecordEditor`, TOR 4.1.1(6)-2).
+  - Pick a กลุ่มงาน (only the ones you `canImport`), filter by community/date, then add / edit / delete one row.
+  - A typed value goes through `ImportValidator` as a one-row grid, so the rules are identical to a file. Field errors come back keyed by header.
+  - The key, the community and an event's EVENT_START are locked on edit; a wrong key is fixed by delete + add.
+  - Each change is its own batch, so it appears in history, can be cancelled, and is audited with old → new.
+  - A delete snapshots the full row (`TableSheet::deleteRows`). Cancelling it re-inserts the row with the same id, refused by `restoreBlocked()` if the key was re-added.
+  - The ดูข้อมูล viewer shows web batches from `payload`, with statuses previous/deleted/pending/rejected.
+- **Backups** (TOR 4.4-5, คุณลักษณะ 2.1-5; `App\Backup\BackupService`, `config/backup.php`, table `backups`).
+  - A database backup is a **PHP-written gzip SQL dump**, with no mysqldump (shared hosting). Cache/session/job tables are dumped as structure only. Restoring the dev dump into a scratch DB gave identical row counts and Thai bytes.
+  - A files backup is a zip of `storage/app/private/imports` without `tmp/`.
+  - **สำรองข้อมูล** (`/backups`, admin) has 2 buttons, the log, and downloads (each download is audited). Old backups past `keep` are deleted from disk; their log rows stay.
+  - Cron-ready: `php artisan backup:run --type=database|files|all`, scheduled in `routes/console.php` (database daily 02:00, files Sunday 03:00). This needs `* * * * * php artisan schedule:run` on the host; the owner will set up cron later.
+  - With no cron, the admin gets a red banner from `backupOverdue` (shared) once the last DB backup is older than 30 days.
+- **Mock demo data (built 2026-11-23; NOT real data).** `php artisan demo:data` deletes every imported record, the import history and the kept files. It then builds 3 fiscal years (2567–2569) × 8 sheets with `App\Demo\MockData` (deterministic seed) and imports each file through `App\Import\FileImporter`, which is the same path as a staff upload (`DataImportController::confirm` uses it too). Each import is dated inside its fiscal year.
+  - **Criteria demo:** it also moves the base criteria set's start to 2567 and adds "เกณฑ์ปรับปรุง 2569 (สาธิต)", starting 2569, with FLOOD/PM25 multi weights and ELDERLY/LOWINCOME social weights shifted. This makes year comparison show the data-vs-criteria Δ split.
+  - **Stories built in:**
+    - The city falls 25.6 → 24.3 → 22.9.
+    - R003 and R022 stay ค่อนข้างสูง all 3 years (R003 has a low budget).
+    - R017 rises to สูง (75.3) in 2569, with weak recovery.
+    - R009 has a FY2568 flood (EV0021) with F4 = 1,850,000, then drops 50.9 → 20.6.
+    - R005 and R012 rise.
+    - In 2567 some MCR evidence columns are blank.
+    - There are 17 events per FY across the hazards' seasons.
+    - Observed recovery ≠ readiness.
+  - The Welcome "ข้อมูลสมมุติ" banner stays on.
+  - **Before go-live this must all be cleared** (checklist in memory `project_tor_gap_decisions_2026_11_23`).
+**Phase 2 (built 2026-11-23):**
+- **V People/System** (คุณลักษณะ 2.2-3). `HevcCalculator::hazard()` also returns `vPeople` (V_SOCIAL/V_HEALTH/V_ASSIST) and `vSystem` (V_WARNING/V_INFRA), each the v_hazard weights re-normalized within its part. They are **display only**: HEVC still uses V. RiskEngine's city hazards carry the averages and deltas. Page 4's V card shows them.
+- **HEVC trend** (`App\Scoring\RiskTrend`, TOR 4.1.2, คุณลักษณะ 2.6-1/2).
+  - `series()` = the engine as of each fiscal year end (cached). A point is `stale` when the community had no new record that year.
+  - `consecutiveHigh()` counts the latest consecutive ค่อนข้างสูง/สูง years; a stale year breaks the run.
+  - Page 3's panel shows a trend line (hollow dot = stale), the change, and a "เสี่ยงสูงต่อเนื่อง N ปี" badge.
+- **R1–R5 radar** (TOR 4.1.1(4), คุณลักษณะ 2.5-1).
+  - Page 3: the community vs the population-weighted city average. `recoveryItems` / `cityRecoveryItems`; only these 5 inputs leave the server.
+  - Page 5: readiness before vs observed after; it replaced the old bar list.
+- **Page 5 L&D:**
+  - a monthly trend across all years (metric chips: damage / houses / injuries / events; the year filter doesn't apply). TOR 4.1.1(5)-1.
+  - a damage-vs-HEVC scatter (`hevc` prop from RiskTrend; click a dot to filter by that community). TOR 4.1.1(5)-2.
+- **MCR coverage gauge 0–10** (TOR 4.1.1(3)-2, `McrEvidence::coverage()`; full 1 / partial 0.5).
+  - An event-only topic doesn't count as missing for a community with no events (`forCommunity(..., hasEvents)`).
+  - The city value is the mean over communities (`components/admin/CoverageGauge.vue`; its optional `ceiling` tick is unused since E1 can be full).
+  - `McrEvidence::mapping()` feeds page 6's collapsible variable ↔ E1–E10 table (วัตถุประสงค์ข้อ 4, 11.3).
+- **New animated SVG charts:** `RadarChart.vue`, `LineChart.vue` (null gaps, risk `bands`, `hollow` points, `width` prop for narrow panels) and `ScatterChart.vue` (quadrant lines, click → `select`). The scatter will be reused for HEVC × budget in phase 3.
+- **EngineCache key now includes a code version** (the mtime/size of every app/Scoring file). Real bug: after a code change, the cache served results without the new fields until the data changed.
+
+**Phase 3 (built 2026-11-23): สรุปสำหรับผู้บริหาร** (`/executive`, `ExecutiveController` + `pages/admin/Executive.vue`). It is open to every role and always shows the latest data. TOR 4.1.1(3), 4.3-4.
+- **Renamed (owner 2026-11-23):** the menu item, page title and h1 are now **"แดชบอร์ด"** (the same word as the module), and it is the **2nd** child of the module, right after เกี่ยวกับระบบ. Settings group labels say "หน้าแดชบอร์ด". "สรุปสำหรับผู้บริหาร" survives only in code comments and in the TOR's own verbatim text.
+- **Collapsible sidebar (owner 2026-11-23):** AdminLayout's "ย่อแถบเมนู" button (desktop only, at the bottom of the sidebar) shrinks it to a 72px icon rail. The rail hides module headers and shows every child flat (icon + `title` tooltip), with a divider between modules. The choice is stored in `localStorage['admin.sidebarCollapsed']`, because every page mounts its own AdminLayout. A `resize` event is fired after the transition so Leaflet maps refit. The mobile drawer always shows labels.
+- **Scatter card layout (owner 2026-11-23):** full width was too big and a narrow centred chart looked bad, so the card is split in half on ≥lg.
+  - Left: the scatter.
+  - Right: 4 quadrant tiles with counts, cut by the same Policy Flag thresholds as the dashed lines (HEVC ≥ cut, budget/person ≤ cut). The 2 high-risk tiles list up to 5 communities each, linking to page 3.
+  - "ขยายกราฟ" opens the same chart large in a blue-header modal.
+- **Scatter HEVC × budget per person** (`m_budget_avg_3y` ÷ population; TOR 4.1.1(3)-1). The dashed lines are the Policy Flag cuts. Clicking a dot opens page 3.
+- **MCR coverage:** comes from `App\Scoring\McrScreening::forRun()`/`cityCoverage()`, the same code page 6 uses (that controller was refactored onto it).
+- **Policy Flags** (`App\Scoring\PolicyFlags`): high risk + low budget per person, high risk + low recovery, continuous high (`RiskTrend::consecutiveHigh`) and rising (Δ MULTI vs the previous FY).
+  - The thresholds are admin settings (`flag_*` in `App\Support\Settings`). The mode is **relative by default** (top/bottom `flag_percent`%) or fixed.
+  - Continuous-high and rising always use real levels and points.
+  - Every flag carries the numbers that triggered it.
+- **Executive Summary** (`App\Scoring\ExecutiveSummary`): `facts()` holds aggregated numbers only, and `rules()` turns them into Thai sentences. That is the default (`summary_mode = rule`).
+  - **AI mode** (`summary_mode = ai`, `App\Ai\SummaryWriter`, `config/ai.php`, `ANTHROPIC_API_KEY` in .env, model `claude-opus-5-5`, official `anthropic-ai/sdk`).
+  - An admin presses the button (`POST executive/ai-summary`); **the page never calls the API itself.** Every call is logged in `ai_summaries` with its tokens and cost.
+  - A text is reused while `facts_hash` matches the current data. If the reply contains any number that isn't in the facts, it is stored as `rejected_numbers` and the rule-based text stays.
+  - The system prompt forbids recommending measures.
+  - The ⓘ modal shows the cost per call and per month, who pays, the exact facts JSON sent, and the usage log.
+  - **Never tested against the live API yet** (no key on dev).
+- **Before–After** (`App\Scoring\InvestmentEffect`): investment points are F4 > 0 events and rounds where the 3-year budget rose by ≥10%.
+  - Before = the last round with data before the point. After = the later rounds with new data.
+  - It shows Δ MULTI plus ΔE/ΔV/ΔC of the hazard that was dominant before. It is labelled as a comparison, not proof of cause.
+- **Settings now has groups and number/select types** (`definitions()` gives `group`, `min`/`max`/`step`/`unit`, `options`). The page dims fixed thresholds in relative mode.
+- `RiskTrend` points now also carry `dominant`, `parts` (E/V/C_RAW per hazard), `budget` and `dataDate`.
+
+**Phase 4 (built 2026-11-23): export, print and the TOR matrix.** TOR 4.4-4, 4.1.1(5)-3.
+- **PDF = browser print** (owner option ก). `composables/usePrint.ts` has `printing` and `printPage()`. While printing, `useTween*` jump to their final values and `useInView` reports true, so nothing prints half-animated. `app.css` has the `@media print` block (A4, 12 mm, no animation, sticky → static, `.print-keep`, `.print-break-before`). AdminLayout hides the sidebar, header and backup banner on paper and prints its own header: system name, page title, printed at, by whom.
+- **`components/admin/ExportButtons.vue`:** "ส่งออก Excel" (`excelHref`) + "บันทึก PDF" (`pdf`, default true) + `TorRef 4.4-4`, all `print:hidden`. It is placed at the end of the sticky filter bar on pages 2, 3, 5 and 6, and in the header of Executive and the funding report.
+- **Excel** (`ExportController` + `App\Export\XlsxExport`, every role): `export.risk` (?year), `export.events` (?year, hazard, community: the same filters as page 5), `export.kpi` (?year, the KPI tab only), `export.flags`. Each reads the same engine/data as its page. The file has a title row, a source/date row and a blue header row, and numbers stay numbers.
+- **รายงานหลักฐานประกอบการเสนอของบประมาณ** (`/reports/funding/{code}`, `FundingReportController` + `pages/admin/FundingReport.vue`, every role, latest data). One printable page per community: profile and HEVC per hazard (with V people/system and C), the HEVC trend, losses and F2–F5 spending per fiscal year plus the latest events, budget per person vs the city median, the R1–R5 radar vs the city, its Policy Flags and its MCR evidence. Linked from page 3's panel, page 5 (when one community is filtered) and each flag on Executive. It never sends `inputs`.
+- **ตารางเทียบ TOR** (`/tor-matrix`, admin, last child of ตั้งค่าระบบ; `TorMatrixController` + `pages/admin/TorMatrix.vue`). **`App\Support\TorMatrix` is the single source**: every clause, its verbatim text (transcribed from the scan), where the system answers it (route names) and a status (`done` / `test` = proven at acceptance / `doc` = document or delivery / `todo`). **Update it when a feature moves or a status changes** (e.g. 4.1.3 tablet → done after phase 5). A test checks every route name exists. It has status chips, search and an 8-page A4 print.
+
+**Phase 5 (built 2026-11-23): tablet + concurrent-user test.** TOR 4.1.3, 4.4-3, คุณลักษณะ 2.1-3.
+- **Tablet check:** every admin page plus Welcome was opened at 768×1024, 820×1180 and 1024×768 (headless Edge, touch emulation). A script checked for sideways overflow and found none.
+  - The 3 pages that looked cramped were fixed. ตารางเทียบ TOR uses narrower columns below lg. The YearComparison A/B gauges are capped at `max-w-xs`. Users hides the สร้างเมื่อ column below xl and gives the กลุ่มงาน column `min-w-[16rem]`.
+  - At 1024 the sidebar is still static (256px); the user can collapse it to the rail.
+- **Touch:** tablets have no hover.
+  - `ScatterChart`: with touch or pen, the first tap shows the label ("แตะอีกครั้งเพื่อเปิด") and a second tap on the same point selects it. A mouse keeps hover + one click.
+  - `LineChart` uses pointer events, so a tap shows the values.
+  - New hover-only UI must get the same treatment.
+- **ตารางเทียบ TOR:** 4.1.3 is now `test`, with the owner confirming on a real tablet at acceptance. No clause is `todo` any more.
+- **`php artisan loadtest:accounts {count=60} {--password=} {--delete}`:** creates or updates verified, view-only (member) accounts named ทดสอบ01…NN, with emails `testNN@loadtest.local`. It uses 2 digits and allows at most 99. `LoadTestAccounts::email($i)` is shared with `loadtest`. `--delete` removes only `@loadtest.local` accounts, and their login_logs rows stay with user_id null. Run it on the server being tested. **Delete the accounts before go-live.**
+- **`php artisan loadtest {url} --password= [--users=20,40,60] [--pages=…] [--pause=5] [--timeout=60]`:** Guzzle async with **one shared CurlMultiHandler**, so the users really run at the same time. Each virtual user has its own cookie jar and goes GET / → POST /login (X-XSRF-TOKEN from the cookie, expects 302 → /dashboard) → the dashboard pages in turn.
+  - It prints a table (requests, failures, logins OK, avg/p95/max seconds, total time, req/s) and writes a Thai Markdown report with per-page averages and failures to `storage/app/private/loadtest/`.
+  - It exits non-zero if any request failed.
+  - Run it from another machine against the real host, after telling the provider.
+  - **Numbers against `php artisan serve` mean nothing:** that server is single-worker, so requests queue. On dev it only proves the script works (5 users: 0 failures).
+
+- **MySQL timestamp gotcha (real bug, 2026-11-23):** a `timestamp()` column that is NOT NULL with no default becomes `ON UPDATE CURRENT_TIMESTAMP` on XAMPP MariaDB, and on many shared hosts. It silently rewrites the value in server-local time on every update. SQLite tests don't catch it. Make such columns `->nullable()`.
 
 **Admin header** (owner, 2026-11-10): the old mock bell (a hard-coded "6") and the date chip's dropdown arrow were removed; don't re-add an alert badge until there are real notifications. The search box is a real **community search**: `HandleInertiaRequests` shares `communityIndex` (code + name, logged-in users only), matching name or code (a typed "ชุมชน" prefix is ignored), with arrow keys/Enter, and opens `community-map?community=CODE`.
 

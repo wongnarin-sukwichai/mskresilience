@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\WorkGroup;
 use App\Http\Controllers\Controller;
+use App\Import\ImportAudit;
 use App\Import\ImportFileReader;
 use App\Import\ImportHistory;
 use App\Import\ImportSheets;
@@ -29,7 +30,7 @@ class ImportHistoryController extends Controller
 
         return Inertia::render('admin/ImportHistory', [
             'batches' => ImportBatch::whereIn('work_group', $groups)
-                ->with('user:id,name', 'cancelledBy:id,name', 'fileDeletedBy:id,name')->latest('id')
+                ->with('user:id,name', 'cancelledBy:id,name', 'fileDeletedBy:id,name', 'reviewedBy:id,name')->latest('id')
                 ->paginate(20)->withQueryString()
                 ->through(fn (ImportBatch $b) => ImportHistory::row($user, $b)),
             'cancelHours' => ImportHistory::CANCEL_HOURS,
@@ -43,7 +44,7 @@ class ImportHistoryController extends Controller
     public function data(Request $request, ImportBatch $batch): JsonResponse
     {
         abort_unless($request->user()->canImport($batch->work_group), 403);
-        $batch->load('user:id,name', 'cancelledBy:id,name', 'fileDeletedBy:id,name');
+        $batch->load('user:id,name', 'cancelledBy:id,name', 'fileDeletedBy:id,name', 'reviewedBy:id,name');
 
         return response()->json([
             'batch' => ImportHistory::summary($batch),
@@ -58,11 +59,21 @@ class ImportHistoryController extends Controller
             return back()->with('error', $message);
         }
 
-        DB::transaction(function () use ($request, $batch) {
-            ImportSheets::for($batch->work_group)->cancel($batch);
+        // A request still waiting for approval saved nothing, so withdrawing it only marks it cancelled.
+        $wasPending = $batch->isPending();
+        DB::transaction(function () use ($request, $batch, $wasPending) {
+            if (! $wasPending) {
+                ImportSheets::for($batch->work_group)->cancel($batch);
+            }
             $batch->update(['cancelled_at' => now(), 'cancelled_by' => $request->user()->id]);
         });
+        ImportAudit::log(
+            $batch,
+            $wasPending ? 'withdrawn' : 'cancelled',
+            ($wasPending ? 'ถอนคำขอ' : 'ยกเลิก').ImportBatch::SOURCES[$batch->source]." {$batch->work_group->label()} #{$batch->id}",
+            ['file' => $batch->original_filename ?? ($batch->payload['label'] ?? null), 'rows' => $batch->row_count],
+        );
 
-        return back()->with('status', "ยกเลิกรายการนำเข้า #{$batch->id} แล้ว");
+        return back()->with('status', $wasPending ? "ถอนคำขอ #{$batch->id} แล้ว" : "ยกเลิกรายการ #{$batch->id} แล้ว");
     }
 }

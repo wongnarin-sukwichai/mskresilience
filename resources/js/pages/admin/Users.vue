@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import type { SharedData, User, UserRole } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
@@ -134,7 +135,7 @@ const inputClass =
         <div class="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-5">
                 <div>
-                    <h2 class="font-semibold text-slate-800">จัดการสมาชิก</h2>
+                    <h2 class="font-semibold text-slate-800">จัดการสมาชิก<TorRef :refs="['4.1.1(6)', 'คุณลักษณะ 2.1-4']" /></h2>
                     <p class="mt-0.5 text-sm text-slate-400">บัญชีผู้ใช้งานระบบทั้งหมด {{ users.length }} บัญชี · คลิกรายการเพื่อแก้ไขหรือลบ</p>
                 </div>
                 <div class="flex items-center gap-3">
@@ -190,7 +191,7 @@ const inputClass =
                             <th class="px-5 py-3 font-medium">อีเมล</th>
                             <th class="px-5 py-3 font-medium">สิทธิ์</th>
                             <th class="px-5 py-3 font-medium">กลุ่มงานที่นำเข้าได้</th>
-                            <th class="px-5 py-3 font-medium">สร้างเมื่อ</th>
+                            <th class="hidden px-5 py-3 font-medium xl:table-cell">สร้างเมื่อ</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -212,7 +213,7 @@ const inputClass =
                                     {{ roleLabels[user.role] }}
                                 </span>
                             </td>
-                            <td class="px-5 py-3">
+                            <td class="min-w-[16rem] px-5 py-3">
                                 <span v-if="user.role === 'admin'" class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
                                     ทุกกลุ่มงาน
                                 </span>
@@ -228,7 +229,7 @@ const inputClass =
                                 </div>
                                 <span v-else class="text-slate-300">–</span>
                             </td>
-                            <td class="whitespace-nowrap px-5 py-3 text-slate-400">{{ formatDate(user.created_at) }}</td>
+                            <td class="hidden whitespace-nowrap px-5 py-3 text-slate-400 xl:table-cell">{{ formatDate(user.created_at) }}</td>
                         </tr>
                         <tr v-if="filteredUsers.length === 0">
                             <td colspan="5" class="px-5 py-10 text-center text-sm text-slate-400">ไม่พบผู้ใช้ที่ค้นหา</td>

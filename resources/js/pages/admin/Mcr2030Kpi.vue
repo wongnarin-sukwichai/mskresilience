@@ -7,8 +7,11 @@
 // - MCR2030: evidence only, never a score (doc note 4). A community shows its status and sentence; the city shows
 //   community counts per status.
 import AnimatedNumber from '@/components/admin/AnimatedNumber.vue';
+import CoverageGauge from '@/components/admin/CoverageGauge.vue';
+import ExportButtons from '@/components/admin/ExportButtons.vue';
 import Reveal from '@/components/admin/Reveal.vue';
 import ScoreBar from '@/components/admin/ScoreBar.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 import { useInView } from '@/composables/useInView';
 import { formatThaiDate } from '@/data/riskDisplay';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -22,8 +25,9 @@ const props = defineProps<{
     initialCommunity: string | null;
     definitions: Record<string, KpiDefinition>;
     essentials: Record<string, { label: string; topics: string[] }>;
-    city: { kpis: Record<string, KpiValue>; mcr: Record<string, McrCityEvidence>; totalCommunities: number } | null;
-    communities: { code: string; name: string; kpis: Record<string, KpiValue>; mcr: Record<string, McrCommunityEvidence> }[];
+    city: { kpis: Record<string, KpiValue>; mcr: Record<string, McrCityEvidence>; totalCommunities: number; coverage: number | null } | null;
+    communities: { code: string; name: string; kpis: Record<string, KpiValue>; mcr: Record<string, McrCommunityEvidence>; mcrCoverage: number }[];
+    mcrMapping: { essential: string; label: string; topic: string; columns: { name: string; source: string }[] }[];
 }>();
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -54,6 +58,10 @@ watch([scope, tab], () => {
 });
 
 const community = computed(() => (scope.value === 'CITY' ? null : (props.communities.find((c) => c.code === scope.value) ?? null)));
+
+// MCR evidence coverage 0–10 for the gauge (the community's, or the city mean) and the mapping table toggle.
+const coverage = computed(() => (community.value ? community.value.mcrCoverage : (props.city?.coverage ?? null)));
+const mappingOpen = ref(false);
 
 // ---------------------------------------------------------------------------------------------------------------
 // KPI
@@ -176,6 +184,11 @@ const selectClass =
                     </option>
                 </select>
             </label>
+            <ExportButtons
+                v-if="city"
+                class="ml-auto pb-1"
+                :excel-href="tab === 'kpi' ? route('export.kpi', { year: selectedYear ?? undefined }) : null"
+            />
         </div>
 
         <div v-if="!city" class="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">
@@ -282,6 +295,70 @@ const selectClass =
                 MCR2030 Alignment Evidence Screening แสดง<span class="font-semibold">หลักฐานที่ระบบมี</span>สำหรับ 10 Essentials ไม่ใช่ Disaster
                 Resilience Scorecard และไม่สรุปเป็นคะแนน MCR2030 อย่างเป็นทางการ
                 <template v-if="!community"> · ทั้งเมือง: นับจำนวนชุมชนตามสถานะ จากทั้งหมด {{ city.totalCommunities }} ชุมชน</template>
+            </div>
+
+            <!-- Evidence coverage gauge 0–10 (TOR 4.1.1(3)-2, คุณลักษณะ 2.4-2) -->
+            <div :class="[card, 'mb-5 flex flex-wrap items-center gap-6 p-5']">
+                <CoverageGauge :value="coverage" />
+                <div class="min-w-[16rem] flex-1">
+                    <h2 class="font-semibold text-slate-800">ความครอบคลุมของหลักฐาน MCR2030<TorRef :refs="['4.1.1(3)-2', 'คุณลักษณะ 2.4-2']" /></h2>
+                    <p class="mt-1 text-sm text-slate-600">
+                        {{ community ? community.name : 'ทั้งเมือง (เฉลี่ย ' + city.totalCommunities + ' ชุมชน)' }}: มีหลักฐานครอบคลุม
+                        <b>{{ coverage?.toFixed(1) ?? '–' }}</b> จาก 10 หลักสำคัญ
+                    </p>
+                    <p class="mt-2 text-xs leading-relaxed text-slate-500">
+                        นับหลักละ 1 เมื่อพบหลักฐานครบ 0.5 เมื่อพบบางส่วน 0 เมื่อยังไม่พบ เป็นการวัดว่าระบบมีข้อมูลรองรับแต่ละหลักแค่ไหน
+                        <span class="font-medium">ไม่ใช่คะแนนความยืดหยุ่นของเมือง</span> · หัวข้อที่ได้จากเหตุการณ์ไม่นับเป็นขาด
+                        ถ้าชุมชนนั้นไม่เคยเกิดเหตุ · หน่วยงานรับผิดชอบ (E1) ตรวจจากกลุ่มงานที่นำเข้าข้อมูลของชุมชน
+                    </p>
+                    <button type="button" class="mt-2 text-xs font-medium text-blue-600 hover:underline" @click="mappingOpen = !mappingOpen">
+                        <i class="fa-solid fa-table-list mr-1"></i>{{ mappingOpen ? 'ซ่อน' : 'ดู' }}ตารางเชื่อมโยงตัวแปรกับ 10 หลักสำคัญ
+                    </button>
+                </div>
+            </div>
+
+            <!-- Variable ↔ Essential mapping (วัตถุประสงค์ข้อ 4, TOR 11.3) -->
+            <div v-if="mappingOpen" :class="[card, 'mb-5 p-5']">
+                <h2 class="font-semibold text-slate-800">
+                    ตารางเชื่อมโยงตัวแปรในระบบกับ MCR2030 10 หลักสำคัญ<TorRef :refs="['วัตถุประสงค์ข้อ 4', '11.3']" />
+                </h2>
+                <p class="mt-1 text-xs text-slate-500">
+                    แต่ละหัวข้อหลักฐาน ใช้ข้อมูลคอลัมน์ใด จากกลุ่มงานใด (ตามเอกสาร MCR2030_Alignment_Evidence_Community_v3)
+                </p>
+                <div class="mt-3 max-h-[520px] overflow-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="sticky top-0 bg-white text-left text-xs text-slate-500">
+                            <tr class="border-b border-slate-100">
+                                <th class="py-2 pr-3 font-medium">หลัก</th>
+                                <th class="py-2 pr-3 font-medium">หัวข้อหลักฐาน</th>
+                                <th class="py-2 pr-3 font-medium">ตัวแปร (คอลัมน์)</th>
+                                <th class="py-2 font-medium">ที่มา</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, i) in mcrMapping" :key="i" class="border-b border-slate-50 align-top">
+                                <td class="whitespace-nowrap py-2 pr-3">
+                                    <template v-if="i === 0 || mcrMapping[i - 1].essential !== row.essential">
+                                        <span class="rounded-lg bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">{{ row.essential }}</span>
+                                        <span class="ml-1 text-xs text-slate-500">{{ row.label }}</span>
+                                    </template>
+                                </td>
+                                <td class="py-2 pr-3 text-slate-700">{{ row.topic }}</td>
+                                <td class="py-2 pr-3">
+                                    <span
+                                        v-for="c in row.columns"
+                                        :key="c.name"
+                                        class="mb-0.5 mr-1 inline-block rounded bg-slate-100 px-1.5 font-mono text-[11px] text-slate-600"
+                                        >{{ c.name }}</span
+                                    >
+                                </td>
+                                <td class="py-2 text-xs text-slate-500">
+                                    {{ [...new Set(row.columns.map((c) => c.source))].join(', ') }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div ref="mcrEl" class="grid gap-4 md:grid-cols-2">

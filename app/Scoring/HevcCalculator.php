@@ -176,6 +176,17 @@ class HevcCalculator
             'V_WARNING' => $groups['V_WARNING'], 'V_INFRA' => $vInfra,
         ]);
 
+        // V split for display (TOR คุณลักษณะ 2.2-3 "แยก People/System ได้"): people = the vulnerable groups, system =
+        // warning access + infrastructure gaps, each the same weighted average re-normalized within its part. They
+        // don't feed HEVC, which uses V_h above.
+        $vWeights = $this->weights['v_hazard'][$h];
+        $vPeople = $this->weighted("V_PEOPLE_$h", array_intersect_key($vWeights, array_flip(['V_SOCIAL', 'V_HEALTH', 'V_ASSIST'])), [
+            'V_SOCIAL' => $groups['V_SOCIAL'], 'V_HEALTH' => $groups['V_HEALTH'], 'V_ASSIST' => $groups['V_ASSIST'],
+        ]);
+        $vSystem = $this->weighted("V_SYSTEM_$h", array_intersect_key($vWeights, array_flip(['V_WARNING', 'V_INFRA'])), [
+            'V_WARNING' => $groups['V_WARNING'], 'V_INFRA' => $vInfra,
+        ]);
+
         // C6/C7 for this hazard (a component absent from the hazard's formula has no weight, so it's skipped).
         $c6 = $this->weighted("C6_$h", $this->weights['c6'][$h], $c);
         $c7 = $this->weighted("C7_$h", $this->weights['c7'][$h], [
@@ -201,6 +212,8 @@ class HevcCalculator
             'e' => $e,
             'ePercent' => $ePercent,
             'v' => $v,
+            'vPeople' => $vPeople,
+            'vSystem' => $vSystem,
             'cRaw' => $cRaw,
             'cHevc' => $cHevc,
         ];

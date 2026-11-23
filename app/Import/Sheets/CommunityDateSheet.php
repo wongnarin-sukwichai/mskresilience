@@ -37,6 +37,12 @@ abstract class CommunityDateSheet extends TableSheet
         return $this->query()->where('community_id', $row['COMMUNITY_ID'])->whereDate('assessment_date', $row['ASSESSMENT_DATE'])->first();
     }
 
+    protected function attributesTaken(array $attributes): bool
+    {
+        return $this->query()->where('community_id', $attributes['community_id'])
+            ->whereDate('assessment_date', substr((string) $attributes['assessment_date'], 0, 10))->exists();
+    }
+
     protected function newRecordAttributes(array $row): array
     {
         return ['community_id' => $row['COMMUNITY_ID'], 'assessment_date' => $row['ASSESSMENT_DATE']];

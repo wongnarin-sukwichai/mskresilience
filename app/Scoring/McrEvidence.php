@@ -2,6 +2,9 @@
 
 namespace App\Scoring;
 
+use App\Enums\WorkGroup;
+use App\Import\ImportColumns;
+
 /**
  * MCR2030 Alignment Evidence Screening per community (MCR2030_Alignment_Evidence_Community_v3.docx). It shows which
  * evidence the system has for each of the 10 Essentials. It is **not a score** (the doc's note 4: not a Disaster
@@ -11,8 +14,10 @@ namespace App\Scoring;
  * - Status: every topic found → 'full' (มีข้อมูล), some → 'partial' (มีบางส่วน), none → 'none' (ยังไม่พบข้อมูลประกอบ).
  * - The sentence names only the topics found, following the doc's wording ("ระบบพบข้อมูลเกี่ยวกับ…").
  * - A topic with `naOk` (C4_4 school DRR, which may be N/A) isn't counted against the status when absent.
- * - A topic with `noColumn` (RESPONSIBLE_AGENCY) has no input column in the import template, so it is never
- *   found and is listed as missing data (owner 2026-11-10: E1 can reach at most มีบางส่วน; never invent it).
+ * - E1 "การกำหนดหน่วยงานรับผิดชอบ" (RESPONSIBLE_AGENCY in the doc) has no column: the client answered (2026-11-23)
+ *   that the import is already split by กลุ่มงาน, so check that instead. It is found when the community's data in
+ *   the round came in through the responsible กลุ่มงาน (IMPORTED_BY = the list of those groups), and the sentence
+ *   names them.
  */
 class McrEvidence
 {
@@ -45,14 +50,17 @@ class McrEvidence
 
     public const HEVC = 'engine:hevc';
 
+    /** The กลุ่มงาน (labels) whose imports supplied the community's data in the round; filled by the controller. */
+    public const IMPORTED_BY = 'system:imported_by';
+
     /**
-     * @return array<string, array{label: string, topics: list<array{label: string, columns: list<string>, naOk?: bool, noColumn?: bool}>}>
+     * @return array<string, array{label: string, topics: list<array{label: string, columns: list<string>, naOk?: bool}>}>
      */
     public static function essentials(): array
     {
         return [
             'E1' => ['label' => 'การจัดองค์กรเพื่อความรีซิเลียนซ์', 'topics' => [
-                ['label' => 'การกำหนดหน่วยงานรับผิดชอบ', 'columns' => ['responsible_agency'], 'noColumn' => true],
+                ['label' => 'การกำหนดหน่วยงานรับผิดชอบ', 'columns' => [self::IMPORTED_BY]],
                 ['label' => 'เครือข่ายที่เป็นทางการ', 'columns' => ['c8_1_formal_network_count']],
                 ['label' => 'ความหลากหลายของภาคส่วน', 'columns' => ['c8_3_network_types_score']],
                 ['label' => 'ประสบการณ์การทำงานร่วมกันของชุมชน', 'columns' => ['c8_4_joint_experience_score']],
@@ -132,34 +140,101 @@ class McrEvidence
      * @param  array<string, mixed>  $values  input columns + the pseudo-columns above (true/value when present)
      * @return array<string, array{status: string, found: list<string>, missing: list<string>, sentence: string}>
      */
-    public static function forCommunity(array $values): array
+    public static function forCommunity(array $values, bool $hasEvents = true): array
     {
         $out = [];
         foreach (self::essentials() as $key => $essential) {
             $found = [];
+            $foundForSentence = [];
             $missing = [];
             $counted = 0;
             foreach ($essential['topics'] as $topic) {
-                $has = ! ($topic['noColumn'] ?? false)
-                    && collect($topic['columns'])->contains(fn ($c) => ($values[$c] ?? null) !== null && ($values[$c] ?? null) !== false);
+                $has = collect($topic['columns'])->contains(fn ($c) => ! in_array($values[$c] ?? null, [null, false, []], true));
+                // A topic that only events can show (losses, event spending, observed recovery) doesn't count against
+                // a community that had no event (owner 2026-11-23): there was nothing to record.
+                $eventOnly = collect($topic['columns'])->every(fn ($c) => str_starts_with($c, 'event:'));
                 if ($has) {
                     $found[] = $topic['label'];
+                    // The sentence names who supplied it: "… การกำหนดหน่วยงานรับผิดชอบ (ข้อมูลนำเข้าโดย งานป้องกันภัย, …)".
+                    $agencies = $topic['columns'] === [self::IMPORTED_BY] ? (array) ($values[self::IMPORTED_BY] ?? []) : [];
+                    $foundForSentence[] = $topic['label'].($agencies ? ' (ข้อมูลนำเข้าโดย '.implode(', ', $agencies).')' : '');
                     $counted++;
+                } elseif ($eventOnly && ! $hasEvents) {
+                    continue;
                 } elseif (! ($topic['naOk'] ?? false)) {
-                    $missing[] = $topic['label'].(($topic['noColumn'] ?? false) ? ' (ยังไม่มีช่องกรอกในแบบฟอร์มนำเข้า)' : '');
+                    $missing[] = $topic['label'];
                     $counted++;
                 }
             }
             $status = ! $found ? 'none' : ($missing ? 'partial' : 'full');
             $out[$key] = [
                 'status' => $status,
+                // For the coverage gauge only (TOR 4.1.1(3)-2): full 1, partial 0.5, none 0. Not a resilience score.
+                'points' => self::POINTS[$status],
                 'found' => $found,
                 'missing' => $missing,
-                'sentence' => $found ? self::glue('ระบบพบข้อมูลเกี่ยวกับ', self::joinThai($found)) : 'ยังไม่พบข้อมูลประกอบ',
+                'sentence' => $found ? self::glue('ระบบพบข้อมูลเกี่ยวกับ', self::joinThai($foundForSentence)) : 'ยังไม่พบข้อมูลประกอบ',
             ];
         }
 
         return $out;
+    }
+
+    /** Gauge points per status (owner 2026-11-23, option ก). */
+    public const POINTS = ['full' => 1.0, 'partial' => 0.5, 'none' => 0.0];
+
+    /**
+     * Evidence coverage 0–10 for one community (TOR 4.1.1(3)-2, คุณลักษณะ 2.4-2): the sum of the 10 Essentials'
+     * points. Named "ความครอบคลุมของหลักฐาน", never a score of how resilient the community is (doc note 4).
+     *
+     * @param  array<string, array{points: float}>  $screening  forCommunity()'s result
+     */
+    public static function coverage(array $screening): float
+    {
+        return array_sum(array_column($screening, 'points'));
+    }
+
+    /**
+     * The variable ↔ Essential mapping table (วัตถุประสงค์ข้อ 4, TOR 11.3): every topic of every Essential with the
+     * input columns that show it and the กลุ่มงาน sheet each comes from.
+     *
+     * @return list<array{essential: string, label: string, topic: string, columns: list<array{name: string, source: string}>}>
+     */
+    public static function mapping(): array
+    {
+        $sources = [];
+        foreach (WorkGroup::cases() as $group) {
+            foreach (ImportColumns::for($group) as $column) {
+                $sources[strtolower($column)] ??= $group->label();
+            }
+        }
+        $pseudo = [
+            self::EVENT_LOSS => ['L1–L5 ความสูญเสียจากเหตุการณ์', WorkGroup::DisasterEvent->label()],
+            self::EVENT_DAMAGE_VALUE => ['L3_DAMAGE_VALUE_THB', WorkGroup::DisasterEvent->label()],
+            self::EVENT_FINANCE_RESPONSE => ['F2_EVENT_RESPONSE_COST_THB', WorkGroup::DisasterEvent->label()],
+            self::EVENT_FINANCE_RECOVERY => ['F3_EVENT_RECOVERY_COST_THB', WorkGroup::DisasterEvent->label()],
+            self::EVENT_FINANCE_REDUCTION => ['F4_EVENT_RISK_REDUCTION_BUDGET_THB', WorkGroup::DisasterEvent->label()],
+            self::EVENT_FINANCE_RELIEF => ['F5_EVENT_RELIEF_COMPENSATION_THB', WorkGroup::DisasterEvent->label()],
+            self::EVENT_OBSERVED => ['R1–R5_OBSERVED, L4_RECOVERY_DAYS', WorkGroup::DisasterEvent->label()],
+            self::HEVC => ['คะแนน HEVC รายภัยและรวม', 'ระบบคำนวณ'],
+            self::IMPORTED_BY => ['กลุ่มงานที่นำเข้าข้อมูลของชุมชน', 'การแบ่งกลุ่มงานนำเข้าข้อมูล (ประวัตินำเข้า)'],
+        ];
+
+        $rows = [];
+        foreach (self::essentials() as $key => $essential) {
+            foreach ($essential['topics'] as $topic) {
+                $rows[] = [
+                    'essential' => $key,
+                    'label' => $essential['label'],
+                    'topic' => $topic['label'],
+                    'columns' => array_map(fn ($c) => isset($pseudo[$c])
+                        ? ['name' => $pseudo[$c][0], 'source' => $pseudo[$c][1]]
+                        : ['name' => strtoupper($c), 'source' => $sources[$c] ?? '–'], $topic['columns']),
+                ];
+            }
+        }
+
+        return $rows;
     }
 
     /**

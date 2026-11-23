@@ -10,11 +10,13 @@ use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, LogsActivity, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -52,6 +54,16 @@ class User extends Authenticatable
             'role' => UserRole::class,
             'work_groups' => AsEnumCollection::of(WorkGroup::class),
         ];
+    }
+
+    /**
+     * Audit trail (TOR คุณลักษณะ 2.1-6): account changes. Never the password or remember token; a password set by
+     * an admin is logged as its own event without the value (UserManagementController).
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()->useLogName('users')
+            ->logOnly(['name', 'email', 'role', 'work_groups'])->logOnlyDirty()->dontSubmitEmptyLogs();
     }
 
     /**

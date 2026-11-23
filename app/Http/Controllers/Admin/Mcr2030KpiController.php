@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\DisasterEvent;
 use App\Models\KpiRecord;
 use App\Scoring\KpiCalculator;
 use App\Scoring\McrEvidence;
+use App\Scoring\McrScreening;
 use App\Scoring\RiskEngine;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -52,11 +52,10 @@ class Mcr2030KpiController extends Controller
         $kpiRecords = KpiRecord::query()
             ->when($asOf, fn ($q) => $q->whereDate('assessment_date', '<=', $asOf))
             ->orderBy('assessment_date')->get()->groupBy('community_id');
-        $events = DisasterEvent::query()
-            ->when($asOf, fn ($q) => $q->whereDate('event_start', '<=', $asOf))
-            ->get()->groupBy('community_id');
+        // MCR2030 evidence per community (shared with the executive page).
+        $screenings = McrScreening::forRun($result, $asOf);
 
-        $rows = collect($result['communities'])->map(function (array $c) use ($kpiRecords, $events) {
+        $rows = collect($result['communities'])->map(function (array $c) use ($kpiRecords, $screenings) {
             $kpiNow = $kpiRecords->get($c['id'])?->last();
             $kpiBefore = $c['previousCutoff']
                 ? $kpiRecords->get($c['id'])?->filter(fn ($r) => $r->assessment_date->toDateString() <= $c['previousCutoff'])->last()
@@ -74,9 +73,7 @@ class Mcr2030KpiController extends Controller
                 'dates' => $dates,
                 'kpis' => KpiCalculator::forCommunity($now),
                 'previousKpis' => $before !== null ? KpiCalculator::forCommunity($before) : null,
-                'mcr' => McrEvidence::forCommunity($now + $this->eventFlags($events->get($c['id']) ?? collect()) + [
-                    McrEvidence::HEVC => $c['status'] === 'ok' && ($c['multi']['hevc'] ?? null) !== null ? true : null,
-                ]),
+                'mcr' => $screenings[$c['code']],
             ];
         });
 
@@ -96,7 +93,11 @@ class Mcr2030KpiController extends Controller
                     'missing' => $rows->flatMap(fn ($r) => $r['mcr'][$key]['missing'])->unique()->values()->all(),
                 ])->all(),
                 'totalCommunities' => $rows->count(),
+                // Evidence coverage 0–10 (TOR 4.1.1(3)-2): the mean of the communities' coverage.
+                'coverage' => McrScreening::cityCoverage($screenings),
             ],
+            // Variable ↔ Essential table (วัตถุประสงค์ข้อ 4, TOR 11.3).
+            'mcrMapping' => McrEvidence::mapping(),
             'communities' => $rows->map(fn ($r) => [
                 'code' => $r['c']['code'],
                 'name' => $r['c']['name'],
@@ -108,6 +109,7 @@ class Mcr2030KpiController extends Controller
                     'hasData' => $definitions[$key]['kind'] !== KpiCalculator::PERCENT || KpiCalculator::hasKpiData($key, $r['now']),
                 ])->all(),
                 'mcr' => $r['mcr'],
+                'mcrCoverage' => McrEvidence::coverage($r['mcr']),
             ])->values()->all(),
         ]);
     }
@@ -186,27 +188,6 @@ class Mcr2030KpiController extends Controller
             'communities' => $count,
             'updated' => $updated,
             'hasData' => true,
-        ];
-    }
-
-    /**
-     * Pseudo-columns for McrEvidence from a community's events: true when any event has the value.
-     *
-     * @param  Collection<int, DisasterEvent>  $events
-     * @return array<string, true|null>
-     */
-    private function eventFlags(Collection $events): array
-    {
-        $any = fn (array $cols) => $events->contains(fn ($e) => collect($cols)->contains(fn ($c) => $e->getAttribute($c) !== null)) ? true : null;
-
-        return [
-            McrEvidence::EVENT_LOSS => $any(['l1_houses_damaged_count', 'l2_injury', 'l2_death', 'l3_damage_value_thb', 'l4_recovery_days', 'l5_repeat_damage_count']),
-            McrEvidence::EVENT_DAMAGE_VALUE => $any(['l3_damage_value_thb']),
-            McrEvidence::EVENT_FINANCE_RESPONSE => $any(['f2_event_response_cost_thb']),
-            McrEvidence::EVENT_FINANCE_RECOVERY => $any(['f3_event_recovery_cost_thb']),
-            McrEvidence::EVENT_FINANCE_REDUCTION => $any(['f4_event_risk_reduction_budget_thb']),
-            McrEvidence::EVENT_FINANCE_RELIEF => $any(['f5_event_relief_compensation_thb']),
-            McrEvidence::EVENT_OBSERVED => $any(['r1_observed', 'r2_observed', 'r3_observed', 'r4_observed', 'r5_observed', 'l4_recovery_days']),
         ];
     }
 

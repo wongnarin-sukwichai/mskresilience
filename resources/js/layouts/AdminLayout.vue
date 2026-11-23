@@ -23,6 +23,8 @@ interface NavLink {
     label: string;
     icon: string;
     href?: string;
+    /** A count pill after the label (e.g. imports waiting for approval); hidden when 0. */
+    badge?: number;
 }
 interface NavGroup extends NavLink {
     children: NavLink[];
@@ -38,7 +40,10 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
         label: DASHBOARD_MODULE,
         icon: 'fa-solid fa-gauge',
         children: [
+            // Owner 2026-11-23: เกี่ยวกับระบบ first, then แดชบอร์ด (the page formerly called สรุปสำหรับผู้บริหาร,
+            // Mayor View, TOR 4.1.1(3)).
             { label: 'เกี่ยวกับระบบ', icon: 'fa-solid fa-house', href: route('dashboard') },
+            { label: 'แดชบอร์ด', icon: 'fa-solid fa-gauge-high', href: route('executive.index') },
             { label: 'ภาพรวมความเสี่ยง', icon: 'fa-solid fa-chart-pie', href: route('risk-overview.index') },
             { label: 'แผนที่รายชุมชน', icon: 'fa-solid fa-map', href: route('community-map.index') },
             { label: 'ปัจจัยความเสี่ยง', icon: 'fa-solid fa-triangle-exclamation', href: route('risk-factors.index') },
@@ -55,7 +60,18 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
                   icon: 'fa-solid fa-database',
                   children: [
                       { label: 'นำเข้าข้อมูล', icon: 'fa-solid fa-cloud-arrow-up', href: route('data-import.index') },
+                      { label: 'แก้ไขข้อมูล', icon: 'fa-solid fa-pen-to-square', href: route('data-records.index') },
                       { label: 'ประวัตินำเข้า', icon: 'fa-solid fa-clock-rotate-left', href: route('import-history.index') },
+                      ...(user.value.role === 'admin'
+                          ? [
+                                {
+                                    label: 'อนุมัติข้อมูล',
+                                    icon: 'fa-solid fa-clipboard-check',
+                                    href: route('import-approvals.index'),
+                                    badge: page.props.pendingApprovals,
+                                },
+                            ]
+                          : []),
                   ],
               },
           ]
@@ -71,6 +87,11 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
                   { label: 'จัดการชุมชน', icon: 'fa-solid fa-map-location-dot', href: route('communities.index') },
                   { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
                   { label: 'จัดการประวัตินำเข้า', icon: 'fa-solid fa-list-check', href: route('import-batches.index') },
+                  { label: 'ตั้งค่าทั่วไป', icon: 'fa-solid fa-toggle-on', href: route('system-settings.index') },
+                  { label: 'บันทึกการแก้ไข', icon: 'fa-solid fa-clipboard-list', href: route('audit-log.index') },
+                  { label: 'ประวัติการเข้าใช้งาน', icon: 'fa-solid fa-right-to-bracket', href: route('login-logs.index') },
+                  { label: 'สำรองข้อมูล', icon: 'fa-solid fa-box-archive', href: route('backups.index') },
+                  { label: 'ตารางเทียบ TOR', icon: 'fa-solid fa-table-list', href: route('tor-matrix.index') },
               ],
           }
         : { label: 'ตั้งค่าระบบ', icon: 'fa-solid fa-gear' },
@@ -95,6 +116,9 @@ const openGroups = ref<Record<string, boolean>>(
     ),
 );
 
+// Shown in the print-only header (บันทึก PDF): the moment the page was opened is close enough.
+const printedAt = new Date().toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' });
+
 const currentDateText = ref('');
 function updateDateText() {
     const date = new Date();
@@ -116,6 +140,19 @@ function updateDateText() {
 }
 
 const mobileSidebarOpen = ref(false);
+
+// Desktop sidebar collapsed to an icon rail (owner 2026-11-23). Kept in localStorage because every page mounts its
+// own AdminLayout, so the choice must survive Inertia navigation. Leaflet maps listen to window resize, so one is
+// fired after the width transition to make them refit (page 3).
+const SIDEBAR_KEY = 'admin.sidebarCollapsed';
+const sidebarCollapsed = ref(typeof window !== 'undefined' && window.localStorage.getItem(SIDEBAR_KEY) === '1');
+function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+    window.localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed.value ? '1' : '0');
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 220);
+}
+// The rail only applies on desktop; the mobile drawer always shows labels.
+const rail = computed(() => sidebarCollapsed.value && !mobileSidebarOpen.value);
 const userMenuOpen = ref(false);
 const userMenuRef = ref<HTMLElement | null>(null);
 
@@ -205,29 +242,31 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
+    <div class="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-800 print:block print:h-auto print:overflow-visible print:bg-white">
         <!-- Mobile overlay -->
         <div v-if="mobileSidebarOpen" class="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" @click="mobileSidebarOpen = false"></div>
 
         <!-- Sidebar -->
         <aside
-            class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col bg-slate-900 text-slate-300 transition-transform duration-200 lg:static lg:translate-x-0"
-            :class="mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+            class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col bg-slate-900 text-slate-300 transition-[transform,width] duration-200 lg:static lg:translate-x-0 print:hidden"
+            :class="[mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full', rail ? 'lg:w-[72px]' : '']"
         >
-            <div class="flex h-[72px] items-center gap-3 border-b border-white/10 px-5">
+            <div class="flex h-[72px] items-center gap-3 border-b border-white/10" :class="rail ? 'justify-center px-0' : 'px-5'">
                 <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-inner">
                     <i class="fa-solid fa-shield-halved text-lg"></i>
                 </div>
-                <div class="min-w-0">
+                <div v-if="!rail" class="min-w-0">
                     <p class="truncate text-sm font-bold leading-tight text-white">ระบบบริหารข้อมูลความเสี่ยง</p>
                     <p class="truncate text-xs text-slate-400">อ.เมือง จ.มหาสารคาม</p>
                 </div>
             </div>
 
-            <nav class="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-4">
+            <nav class="custom-scrollbar flex-1 space-y-1 overflow-y-auto overflow-x-hidden py-4" :class="rail ? 'px-2' : 'px-3'">
                 <template v-for="item in navItems" :key="item.label">
                     <template v-if="'children' in item">
+                        <div v-if="rail" class="mx-2 my-2 border-t border-white/10 first:hidden" :title="item.label"></div>
                         <button
+                            v-else
                             type="button"
                             class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
                             :class="openGroups[item.label] ? 'bg-white/5 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'"
@@ -240,18 +279,27 @@ onUnmounted(() => {
                                 :class="openGroups[item.label] ? 'rotate-180' : ''"
                             ></i>
                         </button>
-                        <div v-if="openGroups[item.label]" class="ml-4 space-y-1 border-l border-white/10 py-1 pl-3">
+                        <div v-if="rail || openGroups[item.label]" class="space-y-1" :class="rail ? '' : 'ml-4 border-l border-white/10 py-1 pl-3'">
                             <Link
                                 v-for="child in item.children"
                                 :key="child.label"
                                 :href="child.href"
-                                class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors"
+                                :title="rail ? child.label : undefined"
+                                class="relative flex items-center gap-3 rounded-xl py-2 text-sm font-medium transition-colors"
                                 :class="
                                     isActive(child.href) ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'
                                 "
                             >
-                                <i :class="[child.icon, 'w-4 text-center']"></i>
-                                {{ child.label }}
+                                <i :class="[child.icon, 'w-4 text-center', rail ? 'mx-auto' : 'ml-3']"></i>
+                                <span v-if="!rail" class="flex-1 pr-3">{{ child.label }}</span>
+                                <span
+                                    v-if="child.badge"
+                                    class="rounded-full bg-amber-400 px-1.5 py-px text-[10px] font-bold text-slate-900"
+                                    :class="rail ? 'absolute -right-0.5 -top-0.5' : 'mr-3'"
+                                    :title="`รออนุมัติ ${child.badge} รายการ`"
+                                >
+                                    {{ child.badge }}
+                                </span>
                             </Link>
                         </div>
                     </template>
@@ -259,23 +307,34 @@ onUnmounted(() => {
                         :is="item.href ? Link : 'div'"
                         v-else
                         :href="item.href"
-                        class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors"
-                        :class="
+                        class="flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition-colors"
+                        :class="[
+                            rail ? 'justify-center' : 'px-3',
                             isActive(item.href)
                                 ? 'bg-blue-600 text-white shadow-sm'
                                 : item.href
                                   ? 'text-slate-300 hover:bg-white/5 hover:text-white'
-                                  : 'cursor-default text-slate-500'
-                        "
-                        :title="item.href ? undefined : 'อยู่ระหว่างการพัฒนา'"
+                                  : 'cursor-default text-slate-500',
+                        ]"
+                        :title="item.href ? (rail ? item.label : undefined) : `${item.label} (อยู่ระหว่างการพัฒนา)`"
                     >
                         <i :class="[item.icon, 'w-4 text-center']"></i>
-                        {{ item.label }}
+                        <span v-if="!rail">{{ item.label }}</span>
                     </component>
                 </template>
             </nav>
 
-            <div class="border-t border-white/10 px-4 py-4 text-xs text-slate-400">
+            <button
+                type="button"
+                class="hidden items-center gap-2 border-t border-white/10 py-3 text-xs text-slate-400 hover:bg-white/5 hover:text-white lg:flex"
+                :class="rail ? 'justify-center' : 'px-5'"
+                :title="rail ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'"
+                @click="toggleSidebar"
+            >
+                <i class="fa-solid" :class="rail ? 'fa-angles-right' : 'fa-angles-left'"></i>
+                <span v-if="!rail">ย่อแถบเมนู</span>
+            </button>
+            <div v-if="!rail" class="border-t border-white/10 px-4 py-4 text-xs text-slate-400">
                 <div class="mb-1.5 flex items-center justify-between">
                     <span>สถานะระบบ</span>
                     <span class="flex items-center gap-1.5 font-medium text-emerald-400">
@@ -297,7 +356,7 @@ onUnmounted(() => {
         <!-- Main -->
         <div class="flex min-w-0 flex-1 flex-col">
             <!-- Header -->
-            <header class="flex h-[72px] shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4 lg:px-6">
+            <header class="flex h-[72px] shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4 lg:px-6 print:hidden">
                 <button
                     type="button"
                     class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
@@ -402,7 +461,31 @@ onUnmounted(() => {
             </header>
 
             <!-- Page content -->
-            <main class="custom-scrollbar flex-1 overflow-y-auto p-4 lg:p-6">
+            <main class="custom-scrollbar flex-1 overflow-y-auto p-4 lg:p-6 print:overflow-visible print:p-0">
+                <!-- Printed / saved as PDF only (TOR 4.4-4): who, what and when, on top of every printed page. -->
+                <div class="mb-4 hidden border-b-2 border-slate-800 pb-2 print:block">
+                    <div class="flex items-end justify-between gap-4">
+                        <div>
+                            <p class="text-base font-bold text-slate-900">ระบบบริหารข้อมูลความเสี่ยงและความเปราะบางของชุมชน</p>
+                            <p class="text-xs text-slate-600">เทศบาลเมืองมหาสารคาม · {{ title }}</p>
+                        </div>
+                        <p class="text-right text-[11px] text-slate-500">พิมพ์เมื่อ {{ printedAt }}<br />โดย {{ user.name }}</p>
+                    </div>
+                </div>
+                <!-- Admin: database backup overdue (TOR 4.4-5). Works without cron: it is just checked on every page. -->
+                <div
+                    v-if="page.props.backupOverdue !== null && page.props.backupOverdue !== undefined && !page.url.startsWith('/backups')"
+                    class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 print:hidden"
+                >
+                    <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+                    <span class="flex-1">
+                        {{ page.props.backupOverdue < 0 ? 'ยังไม่เคยสำรองข้อมูล' : `ไม่ได้สำรองข้อมูลมา ${page.props.backupOverdue} วัน` }}
+                        (ควรสำรองอย่างน้อยเดือนละครั้ง)
+                    </span>
+                    <Link :href="route('backups.index')" class="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+                        <i class="fa-solid fa-box-archive mr-1"></i>ไปสำรองข้อมูล
+                    </Link>
+                </div>
                 <slot />
             </main>
         </div>

@@ -80,7 +80,7 @@ class RiskFactorsController extends Controller
                 'previous' => $c['previous'] ? [
                     'dataDate' => $c['previous']['dataDate'],
                     'groups' => $c['previous']['groups'],
-                    'hazards' => array_map(fn ($h) => ['v' => $h['v'], 'cRaw' => $h['cRaw']], $c['previous']['hazards']),
+                    'hazards' => array_map(fn ($h) => ['v' => $h['v'], 'vPeople' => $h['vPeople'] ?? null, 'vSystem' => $h['vSystem'] ?? null, 'cRaw' => $h['cRaw']], $c['previous']['hazards']),
                 ] : null,
             ], $result['communities']) : [],
             'weights' => $weights,

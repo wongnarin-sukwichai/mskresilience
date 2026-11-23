@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Community;
 use App\Models\DisasterEvent;
 use App\Models\DisasterRecord;
 use App\Models\ScoringCriteriaSet;
 use App\Scoring\CriteriaSets;
 use App\Scoring\HevcCalculator;
+use App\Scoring\RiskTrend;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -99,9 +101,19 @@ class ImpactRecoveryController extends Controller
             ->filter(fn ($r) => $r->m_budget_avg_3y !== null)
             ->mapWithKeys(fn ($r) => [$r->community->code => (float) $r->m_budget_avg_3y]);
 
+        // HEVC per community per fiscal year, for "ความเสียหายจริงเทียบกับค่า HEVC" (TOR 4.1.1(5)-2): each community's
+        // score in the events' year next to what the events actually cost.
+        $trend = RiskTrend::series();
+        $names = Community::pluck('name', 'code');
+
         return Inertia::render('admin/ImpactRecovery', [
             'events' => $events->values(),
             'budgets' => $budgets,
+            'hevcYears' => $trend['years'],
+            'hevc' => collect($trend['communities'])->map(fn ($byYear, $code) => [
+                'name' => $names[$code] ?? $code,
+                'years' => array_map(fn ($p) => ['multi' => $p['multi'], 'level' => $p['level'], 'hazards' => $p['hazards']], $byYear),
+            ]),
         ]);
     }
 }

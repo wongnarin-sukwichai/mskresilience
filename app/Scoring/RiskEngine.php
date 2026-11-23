@@ -15,8 +15,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 /**
- * The calc engine. It computes live on every call, with no stored results (owner 2026-11-10: only 32 communities,
- * and it keeps the executive what-if simple). Rules decided by the owner:
+ * The calc engine. Results aren't stored in a table (owner 2026-11-10: only 32 communities, and it keeps the
+ * executive what-if simple). Since 2026-11-23 a run is cached until the data changes (EngineCache), for the
+ * 20-users-at-once TOR test; the numbers are the same. Rules decided by the owner:
  * - Data round: each community's latest record per sheet, dated on or before $asOf (2026-11-06).
  * - Previous round (for Δ, 2026-11-10): the same community computed as of the day before its newest record used,
  *   so Δ shows only what the newer data changed. No such data → no previous.
@@ -62,6 +63,22 @@ class RiskEngine
      * @return array{communities: list<array<string, mixed>>, city: array<string, mixed>, asOf: string|null}
      */
     public function run(?string $asOf = null, ?ScoringCriteriaSet $override = null): array
+    {
+        // Kept between requests until the data changes (EngineCache). An unsaved override set can't be keyed.
+        if ($override && ! $override->exists) {
+            return $this->compute($asOf, $override);
+        }
+
+        return EngineCache::remember(
+            'run:'.($asOf ?? 'latest').':'.($override?->id ?? '-'),
+            fn () => $this->compute($asOf, $override),
+        );
+    }
+
+    /**
+     * @return array{communities: list<array<string, mixed>>, city: array<string, mixed>, asOf: string|null}
+     */
+    private function compute(?string $asOf, ?ScoringCriteriaSet $override): array
     {
         $this->sets = ScoringCriteriaSet::query()->orderBy('start_fiscal_year')->get();
         $this->loadRecords($asOf);
@@ -223,10 +240,16 @@ class RiskEngine
         $hazards = [];
         foreach (HevcCalculator::HAZARDS as $h) {
             $v = $average(fn ($c) => $c['hazards'][$h]['v'] ?? null);
+            $vPeople = $average(fn ($c) => $c['hazards'][$h]['vPeople'] ?? null);
+            $vSystem = $average(fn ($c) => $c['hazards'][$h]['vSystem'] ?? null);
             $cRaw = $average(fn ($c) => $c['hazards'][$h]['cRaw'] ?? null);
             $hazards[$h] = $withLevel($average(fn ($c) => $c['hazards'][$h]['hevc'] ?? null)) + [
                 'v' => $v['value'],
                 'vDelta' => $v['delta'],
+                'vPeople' => $vPeople['value'],
+                'vPeopleDelta' => $vPeople['delta'],
+                'vSystem' => $vSystem['value'],
+                'vSystemDelta' => $vSystem['delta'],
                 'cRaw' => $cRaw['value'],
                 'cRawDelta' => $cRaw['delta'],
             ];

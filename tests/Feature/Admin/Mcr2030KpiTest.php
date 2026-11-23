@@ -45,20 +45,30 @@ class Mcr2030KpiTest extends TestCase
         $this->assertNull($k['KPI_LOW_INCOME']['score']);
     }
 
-    public function test_mcr_evidence_never_finds_responsible_agency_and_treats_school_drr_as_optional()
+    public function test_mcr_evidence_checks_the_responsible_agency_from_the_importing_work_groups()
     {
-        $e = McrEvidence::forCommunity([
+        $values = [
             'c8_1_formal_network_count' => 3, 'c8_3_network_types_score' => 2, 'c8_4_joint_experience_score' => 4,
             'c4_1_volunteer_per_1000' => 5, 'c4_2_training_count' => 1, 'c4_3_risk_comm_score' => 2,
             'c4_4_school_drr_education_score' => null,
-        ]);
+        ];
+        $e = McrEvidence::forCommunity($values);
 
+        // No data came in through any กลุ่มงาน: the responsible-agency topic is missing.
         $this->assertSame('partial', $e['E1']['status']);
-        $this->assertStringContainsString('ยังไม่มีช่องกรอก', $e['E1']['missing'][0]);
+        $this->assertSame(['การกำหนดหน่วยงานรับผิดชอบ'], $e['E1']['missing']);
         $this->assertSame('full', $e['E6']['status']); // C4_4 empty doesn't count against it
         $this->assertSame('none', $e['E10']['status']);
         $this->assertSame('ยังไม่พบข้อมูลประกอบ', $e['E10']['sentence']);
         $this->assertSame('ระบบพบข้อมูลเกี่ยวกับเครือข่ายที่เป็นทางการ ความหลากหลายของภาคส่วน และประสบการณ์การทำงานร่วมกันของชุมชน', $e['E1']['sentence']);
+
+        // Client 2026-11-23: the import is split by กลุ่มงาน, so data sent by them is the evidence, and it is named.
+        $e = McrEvidence::forCommunity($values + [McrEvidence::IMPORTED_BY => ['งานป้องกันภัย', 'งานสาธารณสุข']]);
+        $this->assertSame('full', $e['E1']['status']);
+        $this->assertSame(1.0, $e['E1']['points']);
+        $this->assertStringStartsWith('ระบบพบข้อมูลเกี่ยวกับการกำหนดหน่วยงานรับผิดชอบ (ข้อมูลนำเข้าโดย งานป้องกันภัย, งานสาธารณสุข)', $e['E1']['sentence']);
+        // An empty list (no group sent anything) is not evidence.
+        $this->assertSame(['การกำหนดหน่วยงานรับผิดชอบ'], McrEvidence::forCommunity($values + [McrEvidence::IMPORTED_BY => []])['E1']['missing']);
     }
 
     public function test_every_role_can_view_it()
@@ -88,7 +98,7 @@ class Mcr2030KpiTest extends TestCase
                 ->where('city.kpis.KPI_ASSIST.score', 3)
                 ->where('city.kpis.KPI_ASSIST.hasData', true)
                 ->where('city.kpis.KPI_MEDICAL.hasData', false)
-                ->where('city.mcr.E1.none', 2) // no C8 data, and RESPONSIBLE_AGENCY has no column
+                ->where('city.mcr.E1.partial', 2) // data came in through the กลุ่มงาน, but no C8 network data
                 ->where('city.mcr.E2.partial', 2)
                 ->where('communities.0.kpis.KPI_ASSIST.raw', 10)
                 ->where('communities.0.kpis.KPI_ASSIST.score', 1));

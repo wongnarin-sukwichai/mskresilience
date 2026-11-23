@@ -3,6 +3,7 @@
 // fold waits until it's scrolled into view); later changes ease from the shown value to the new one. It works for
 // anything driven by a number: SVG geometry, text, CSS widths. Users with "reduce motion" get the final value at once.
 import { computed, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue';
+import { printing } from './usePrint';
 
 const DEFAULT_DURATION = 900;
 
@@ -26,6 +27,11 @@ export function useTweenedList(
 
     const animate = (target: (number | null)[]) => {
         cancelAnimationFrame(frame);
+        // Printing (บันทึก PDF): every value at its final state, even charts never scrolled into view.
+        if (printing.value) {
+            shown.value = [...target];
+            return;
+        }
         if (!active.value) {
             shown.value = target.map((v) => (v === null ? null : 0));
             return;
@@ -45,7 +51,7 @@ export function useTweenedList(
         frame = requestAnimationFrame(step);
     };
 
-    watch([source, active], () => animate(source()), { immediate: true, deep: true });
+    watch([source, active, printing], () => animate(source()), { immediate: true, deep: true });
     onBeforeUnmount(() => cancelAnimationFrame(frame));
 
     return shown;

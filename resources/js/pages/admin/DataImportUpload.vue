@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TorRef from '@/components/admin/TorRef.vue';
 import { workGroupIcons } from '@/data/workGroupIcons';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
@@ -36,6 +37,7 @@ type HistoryItem = {
     rowCount: number;
     replacedCount: number;
     communityCount: number;
+    status: string;
 };
 
 // Past imports (and cancelling them) live in the ประวัตินำเข้า menu (pages/admin/ImportHistory.vue).
@@ -49,6 +51,8 @@ const props = defineProps<{
     /** The criteria set each fiscal year in the waiting file will use (plain info in the confirm dialog). */
     criteriaByYear: { year: number; set: string | null }[];
     lastImport: HistoryItem | null;
+    /** Approval mode is on for this user (TOR 4.1.1(6)-1): the import waits for an admin, nothing is saved yet. */
+    needsApproval: boolean;
 }>();
 
 // "ตัวอย่างข้อมูล" viewer: web-only demo rows (App\Import\ImportExamples), never part of the template.
@@ -71,7 +75,7 @@ onMounted(() => document.addEventListener('keydown', closeExampleOnEscape));
 onUnmounted(() => document.removeEventListener('keydown', closeExampleOnEscape));
 
 const steps = computed(() => [
-    { title: 'ดาวน์โหลดแบบฟอร์ม', detail: 'ไฟล์ Excel ที่มีหัวคอลัมน์ตรงตามที่ระบบต้องการ', ready: true },
+    { title: 'ดาวน์โหลดแบบฟอร์ม', detail: 'ไฟล์ Excel (แนะนำ) หรือ CSV ที่มีหัวคอลัมน์ตรงตามที่ระบบต้องการ', ready: true },
     {
         title: 'กรอกข้อมูลในชีตแรก',
         detail: 'เลือกรหัสชุมชน (COMMUNITY_ID) จากรายการ ดูชื่อชุมชนได้ในชีต "รายชื่อชุมชน" ชี้เมาส์ที่หัวคอลัมน์เพื่อดูคำอธิบาย ช่องที่ไม่มีข้อมูลให้เว้นว่างไว้ (ไม่ต้องใส่ 0)',
@@ -81,7 +85,8 @@ const steps = computed(() => [
     { title: 'ตรวจผลและยืนยัน', detail: 'ดูข้อผิดพลาด/คำเตือน และชุมชนที่มีหรือขาด แล้วกดยืนยันเพื่อนำข้อมูลเข้าระบบ', ready: props.importReady },
 ]);
 
-const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls'];
+// Excel or CSV (TOR 4.1.1(2)-1, 4.4-2). The server reads a Thai CSV saved as UTF-8 or TIS-620/Windows-874.
+const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 
 const uploadForm = useForm<{ file: File | null }>({ file: null });
 const selectedFile = computed(() => uploadForm.file);
@@ -93,7 +98,7 @@ function acceptFile(file: File | undefined) {
     if (!file) return;
     const name = file.name.toLowerCase();
     if (!ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
-        fileError.value = 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls)';
+        fileError.value = 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls) หรือ CSV (.csv)';
         return;
     }
     fileError.value = '';
@@ -261,12 +266,14 @@ onUnmounted(stopSaveTimer);
 function confirmImport() {
     if (!props.preview || !confirmChecked.value) return;
     const s = props.preview.summary;
-    saveSteps.value = [
-        'ตรวจสอบไฟล์อีกครั้งก่อนบันทึก',
-        `บันทึกข้อมูล ${s.rowCount} แถว จาก ${s.included.length} ชุมชน` + (s.replaceCount ? ` (แทนที่ข้อมูลเดิม ${s.replaceCount} แถว)` : ''),
-        'จัดเก็บไฟล์ต้นฉบับ',
-        'บันทึกประวัติการนำเข้า',
-    ];
+    saveSteps.value = props.needsApproval
+        ? ['ตรวจสอบไฟล์อีกครั้ง', 'จัดเก็บไฟล์ต้นฉบับ', `ส่งคำขอนำเข้า ${s.rowCount} แถว ให้ผู้ดูแลระบบอนุมัติ`, 'บันทึกประวัติการนำเข้า']
+        : [
+              'ตรวจสอบไฟล์อีกครั้งก่อนบันทึก',
+              `บันทึกข้อมูล ${s.rowCount} แถว จาก ${s.included.length} ชุมชน` + (s.replaceCount ? ` (แทนที่ข้อมูลเดิม ${s.replaceCount} แถว)` : ''),
+              'จัดเก็บไฟล์ต้นฉบับ',
+              'บันทึกประวัติการนำเข้า',
+          ];
     saveStep.value = 0;
     saveServerDone.value = false;
     confirming.value = true;
@@ -395,23 +402,42 @@ function formatFileSize(bytes: number) {
                         {{ col }}
                     </span>
                 </div>
-                <a
-                    :href="route('data-import.template', group.value)"
-                    class="mt-auto inline-flex items-center justify-center gap-2 self-start rounded-xl bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                >
-                    <i class="fa-solid fa-file-arrow-down"></i>ดาวน์โหลดแบบฟอร์ม (.xlsx)
-                </a>
+                <div class="mt-auto flex flex-wrap items-center gap-2">
+                    <a
+                        :href="route('data-import.template', group.value)"
+                        class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                    >
+                        <i class="fa-solid fa-file-arrow-down"></i>ดาวน์โหลดแบบฟอร์ม (.xlsx)
+                    </a>
+                    <a
+                        :href="route('data-import.template', { group: group.value, format: 'csv' })"
+                        title="หัวคอลัมน์อย่างเดียว ไม่มีคำอธิบายและรายการรหัสชุมชน"
+                        class="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                    >
+                        <i class="fa-solid fa-file-csv"></i>แบบ CSV
+                    </a>
+                    <TorRef :refs="['4.4-2']" />
+                </div>
             </div>
         </div>
 
         <!-- Success card, after the saving steps -->
         <div v-if="successVisible && lastImport" class="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
             <div class="flex flex-col items-center text-center">
-                <span class="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                    <i class="fa-solid fa-circle-check text-4xl"></i>
-                </span>
-                <h2 class="text-lg font-bold text-slate-800">นำเข้าข้อมูลสำเร็จ</h2>
-                <p class="mt-1 text-sm text-slate-500">ข้อมูล{{ group.label }}เข้าระบบและแสดงผลแล้ว</p>
+                <template v-if="lastImport.status === 'pending'">
+                    <span class="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50 text-amber-500">
+                        <i class="fa-solid fa-hourglass-half text-3xl"></i>
+                    </span>
+                    <h2 class="text-lg font-bold text-slate-800">ส่งข้อมูลรออนุมัติแล้ว<TorRef :refs="['4.1.1(6)-1', 'คุณลักษณะ 2.3-4']" /></h2>
+                    <p class="mt-1 text-sm text-slate-500">ข้อมูล{{ group.label }}จะเข้าระบบเมื่อผู้ดูแลระบบอนุมัติ ติดตามสถานะได้ที่ประวัตินำเข้า</p>
+                </template>
+                <template v-else>
+                    <span class="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                        <i class="fa-solid fa-circle-check text-4xl"></i>
+                    </span>
+                    <h2 class="text-lg font-bold text-slate-800">นำเข้าข้อมูลสำเร็จ<TorRef :refs="['คุณลักษณะ 2.3-4']" /></h2>
+                    <p class="mt-1 text-sm text-slate-500">ข้อมูล{{ group.label }}เข้าระบบและแสดงผลแล้ว</p>
+                </template>
                 <span class="mt-2 rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600"
                     >เลขอ้างอิงการนำเข้า #{{ lastImport.id }}</span
                 >
@@ -476,7 +502,7 @@ function formatFileSize(bytes: number) {
                     <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
                 </span>
                 <p class="text-sm font-medium text-slate-700">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</p>
-                <p class="mt-1 text-xs text-slate-400">รองรับไฟล์ Excel (.xlsx, .xls)</p>
+                <p class="mt-1 text-xs text-slate-400">รองรับไฟล์ Excel (.xlsx, .xls) และ CSV (.csv)</p>
             </div>
 
             <div v-else class="flex items-center gap-3 rounded-xl border border-slate-200 p-4">
@@ -497,7 +523,7 @@ function formatFileSize(bytes: number) {
                 </button>
             </div>
 
-            <input ref="fileInputEl" type="file" accept=".xlsx,.xls" class="hidden" @change="handleFileChange" />
+            <input ref="fileInputEl" type="file" accept=".xlsx,.xls,.csv" class="hidden" @change="handleFileChange" />
             <p v-if="fileError || uploadForm.errors.file" class="mt-2 text-xs text-red-600">{{ fileError || uploadForm.errors.file }}</p>
 
             <div v-if="importReady" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
@@ -518,7 +544,7 @@ function formatFileSize(bytes: number) {
         <div v-else class="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h2 class="font-semibold text-slate-800">ผลการตรวจสอบไฟล์</h2>
+                    <h2 class="font-semibold text-slate-800">ผลการตรวจสอบไฟล์<TorRef :refs="['4.1.1(2)-2', 'คุณลักษณะ 2.3-2']" /></h2>
                     <p class="mt-0.5 text-xs text-slate-500"><i class="fa-solid fa-file-excel mr-1 text-emerald-600"></i>{{ preview.filename }}</p>
                 </div>
                 <span v-if="!revealDone" class="flex items-center gap-1.5 text-xs text-blue-600">
@@ -815,7 +841,11 @@ function formatFileSize(bytes: number) {
                             </ul>
                         </div>
 
-                        <p class="text-slate-600">เมื่อยืนยันแล้ว ข้อมูลจะเข้าระบบและแสดงผลทันที</p>
+                        <p v-if="needsApproval" class="rounded-xl bg-amber-50 p-3 text-amber-800">
+                            <i class="fa-solid fa-hourglass-half mr-1.5"></i>ระบบเปิดโหมดอนุมัติ เมื่อยืนยันแล้วไฟล์นี้จะส่งให้ผู้ดูแลระบบอนุมัติก่อน
+                            ข้อมูลจะเข้าระบบเมื่อได้รับอนุมัติ
+                        </p>
+                        <p v-else class="text-slate-600">เมื่อยืนยันแล้ว ข้อมูลจะเข้าระบบและแสดงผลทันที</p>
 
                         <label class="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 p-3 hover:bg-slate-50">
                             <input v-model="confirmChecked" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600" />

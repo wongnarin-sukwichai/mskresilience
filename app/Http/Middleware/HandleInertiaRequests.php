@@ -2,7 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Backup\BackupService;
+use App\Enums\UserRole;
 use App\Models\Community;
+use App\Models\ImportBatch;
+use App\Support\Settings;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -50,6 +54,21 @@ class HandleInertiaRequests extends Middleware
             'communityIndex' => fn () => $request->user()
                 ? Community::orderBy('code')->get(['code', 'name'])
                 : [],
+            // Admin sidebar badge on อนุมัติข้อมูล: imports/edits waiting for approval.
+            'pendingApprovals' => fn () => $request->user()?->role === UserRole::Admin
+                ? ImportBatch::where('status', 'pending')->whereNull('cancelled_at')->count()
+                : 0,
+            // Admin banner when the last database backup is too old (TOR 4.4-5): days since it, -1 = never, null = fine.
+            'backupOverdue' => function () use ($request) {
+                if ($request->user()?->role !== UserRole::Admin) {
+                    return null;
+                }
+                $days = BackupService::daysSinceLastDatabaseBackup();
+
+                return $days === null ? -1 : ($days >= config('backup.overdue_days') ? $days : null);
+            },
+            // TorRef.vue shows the "TOR …" badges only while this is on (ตั้งค่าทั่วไป), for the acceptance presentation.
+            'showTorRefs' => fn () => $request->user() ? (bool) Settings::get('show_tor_refs') : false,
             // Controllers flash a Thai success message via back()->with('status', ...) or a refusal via
             // back()->with('error', ...); AdminLayout shows either as a toast (green / red).
             'flash' => [

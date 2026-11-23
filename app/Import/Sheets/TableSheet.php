@@ -127,8 +127,104 @@ abstract class TableSheet implements ImportSheet
         return $statuses;
     }
 
+    /**
+     * Delete records by key (the web edit form's ลบ, TOR 4.1.1(6)-2). Each record's full raw row is kept in
+     * import_replaced_rows first, so cancelling the delete batch puts it back with the same id. Called inside a DB
+     * transaction.
+     *
+     * @param  list<array<string, mixed>>  $rows  validated key values (community id resolved)
+     */
+    public function deleteRows(array $rows, ImportBatch $batch): void
+    {
+        foreach ($rows as $row) {
+            if (! $record = $this->find($row)) {
+                continue;
+            }
+            $batch->replacedRows()->create([
+                'record_id' => $record->id,
+                'previous_batch_id' => $record->import_batch_id,
+                'previous' => $record->getAttributes(),
+            ]);
+            $record->delete();
+        }
+    }
+
+    /**
+     * Why a web_delete batch can't be cancelled now: the same key was added again since. Null = it can.
+     */
+    public function restoreBlocked(ImportBatch $batch): ?string
+    {
+        foreach ($batch->replacedRows()->get() as $kept) {
+            if ($this->attributesTaken($kept->previous)) {
+                return 'มีข้อมูลของรายการเดียวกันถูกเพิ่มเข้ามาใหม่แล้ว จึงคืนแถวที่ลบไม่ได้ กรุณาลบหรือยกเลิกรายการที่เพิ่มนั้นก่อน';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether a record with the same key as these raw attributes exists now.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    abstract protected function attributesTaken(array $attributes): bool;
+
+    /**
+     * The record for a validated row (community id resolved), or null. For the web edit form.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public function findRecord(array $row): ?Model
+    {
+        return $this->find($row);
+    }
+
+    /** @return class-string<Model> */
+    public function recordModel(): string
+    {
+        return $this->model();
+    }
+
+    /**
+     * A record's values keyed by header, written the way a user would type them in a file (community code, dates
+     * as Y-m-d, ใช่/ไม่ใช่), so they can go back through ImportValidator unchanged. `community` must be loaded.
+     *
+     * @return array<string, string|null>
+     */
+    public function recordValues(Model $record): array
+    {
+        $out = [];
+        foreach ($this->rules() as $header => $rule) {
+            $value = match ($header) {
+                'COMMUNITY_ID' => $record->community?->code,
+                'COMMUNITY_NAME' => $record->community?->name,
+                default => $record->getAttributes()[strtolower($header)] ?? null,
+            };
+            $out[$header] = match (true) {
+                $value === null => null,
+                in_array($rule, [self::DATE, self::OPTIONAL_DATE], true) => substr((string) $value, 0, 10),
+                $rule === self::YES_NO => $value ? 'ใช่' : 'ไม่ใช่',
+                in_array($rule, [self::DECIMAL, self::PERCENT], true) => rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.'),
+                default => (string) $value,
+            };
+        }
+
+        return $out;
+    }
+
     public function cancel(ImportBatch $batch): void
     {
+        // A web delete: put the deleted rows back as they were (same id).
+        if ($batch->source === 'web_delete') {
+            $model = $this->model();
+            foreach ($batch->replacedRows()->get() as $kept) {
+                (new $model)->forceFill([...$kept->previous, 'import_batch_id' => $kept->previous_batch_id])->save();
+            }
+
+            return;
+        }
+
         $kept = $batch->replacedRows()->get()->keyBy('record_id');
 
         foreach ($this->query()->where('import_batch_id', $batch->id)->get() as $record) {

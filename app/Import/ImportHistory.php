@@ -3,6 +3,7 @@
 namespace App\Import;
 
 use App\Enums\UserRole;
+use App\Import\Sheets\TableSheet;
 use App\Models\ImportBatch;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
@@ -26,9 +27,12 @@ class ImportHistory
     {
         return match (true) {
             $batch->isCancelled() => 'รายการนี้ถูกยกเลิกไปแล้ว',
+            $batch->isRejected() => 'รายการนี้ไม่ได้รับอนุมัติ ไม่มีข้อมูลให้ยกเลิก',
             ! $user->canImport($batch->work_group) => "คุณไม่มีสิทธิ์นำเข้าข้อมูล{$batch->work_group->label()}",
             $user->role === UserRole::Admin => null,
             $batch->user_id !== $user->id => 'ยกเลิกได้เฉพาะรายการที่คุณนำเข้าเอง',
+            // A request still waiting for approval can be withdrawn any time: nothing was saved.
+            $batch->isPending() => null,
             $batch->created_at->lt(now()->subHours(self::CANCEL_HOURS)) => 'เกิน '.self::CANCEL_HOURS.' ชั่วโมงหลังนำเข้าแล้ว กรุณาติดต่อผู้ดูแลระบบเพื่อยกเลิก',
             default => null,
         };
@@ -39,8 +43,15 @@ class ImportHistory
      */
     public static function cancelBlocked(ImportBatch $batch): ?string
     {
-        if (! ImportSheets::for($batch->work_group)) {
+        if ($batch->isPending()) {
+            return null;
+        }
+        $sheet = ImportSheets::for($batch->work_group);
+        if (! $sheet) {
             return 'ยังไม่รองรับการยกเลิกข้อมูลกลุ่มงานนี้';
+        }
+        if ($batch->source === 'web_delete' && $sheet instanceof TableSheet && $message = $sheet->restoreBlocked($batch)) {
+            return $message;
         }
         // Batches imported before old values were kept (2026-11-03) can't put back what they replaced.
         if ($batch->replaced_count > $batch->replacedRows()->count()) {
@@ -65,7 +76,14 @@ class ImportHistory
             'group' => ['value' => $batch->work_group->value, 'label' => $batch->work_group->label()],
             'createdAt' => $batch->created_at->toIso8601String(),
             'user' => $batch->user?->name,
-            'filename' => $batch->original_filename,
+            // A web-form change has no file; its row label ("R001 · 2025-01-20") stands in for the file name.
+            'filename' => $batch->original_filename ?? ($batch->payload['label'] ?? '–'),
+            'source' => $batch->source,
+            'sourceLabel' => ImportBatch::SOURCES[$batch->source] ?? $batch->source,
+            'status' => $batch->status,
+            'reviewedBy' => $batch->reviewedBy?->name,
+            'reviewedAt' => $batch->reviewed_at?->toIso8601String(),
+            'reviewNote' => $batch->review_note,
             'rowCount' => $batch->row_count,
             'replacedCount' => $batch->replaced_count,
             'communityCount' => $batch->community_count,
@@ -74,7 +92,7 @@ class ImportHistory
             'fileDeletedAt' => $batch->file_deleted_at?->toIso8601String(),
             'fileDeletedBy' => $batch->fileDeletedBy?->name,
             // Size of the kept file on disk; null when it was deleted or is missing.
-            'fileBytes' => ! $batch->isFileDeleted() && Storage::disk('local')->exists($batch->stored_path)
+            'fileBytes' => $batch->stored_path && ! $batch->isFileDeleted() && Storage::disk('local')->exists($batch->stored_path)
                 ? Storage::disk('local')->size($batch->stored_path) : null,
             // Size the file had when an admin deleted it (shown struck through in the ขนาดไฟล์ column).
             'deletedFileBytes' => $batch->deleted_file_bytes,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Enums\WorkGroup;
 use App\Http\Controllers\Controller;
+use App\Import\ImportAudit;
 use App\Import\ImportHistory;
 use App\Models\ImportBatch;
 use Illuminate\Http\RedirectResponse;
@@ -27,7 +28,7 @@ class ImportBatchManagementController extends Controller
             'group' => ['nullable', Rule::enum(WorkGroup::class)],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d'],
-            'status' => ['nullable', Rule::in(['active', 'cancelled', 'file_kept', 'file_deleted'])],
+            'status' => ['nullable', Rule::in(['active', 'pending', 'rejected', 'cancelled', 'web', 'file_kept', 'file_deleted'])],
         ]);
         $user = $request->user();
 
@@ -37,12 +38,15 @@ class ImportBatchManagementController extends Controller
             ->when($filters['from'] ?? null, fn ($q, $from) => $q->whereDate('created_at', '>=', $from))
             ->when($filters['to'] ?? null, fn ($q, $to) => $q->whereDate('created_at', '<=', $to))
             ->when($filters['status'] ?? null, fn ($q, $status) => match ($status) {
-                'active' => $q->whereNull('cancelled_at'),
+                'active' => $q->whereNull('cancelled_at')->where('status', 'active'),
+                'pending' => $q->whereNull('cancelled_at')->where('status', 'pending'),
+                'rejected' => $q->where('status', 'rejected'),
                 'cancelled' => $q->whereNotNull('cancelled_at'),
-                'file_kept' => $q->whereNull('file_deleted_at'),
+                'web' => $q->where('source', '!=', 'file'),
+                'file_kept' => $q->whereNotNull('stored_path')->whereNull('file_deleted_at'),
                 'file_deleted' => $q->whereNotNull('file_deleted_at'),
             })
-            ->with('user:id,name', 'cancelledBy:id,name', 'fileDeletedBy:id,name')->latest('id')
+            ->with('user:id,name', 'cancelledBy:id,name', 'fileDeletedBy:id,name', 'reviewedBy:id,name')->latest('id')
             ->paginate(20)->withQueryString()
             ->through(fn (ImportBatch $b) => ImportHistory::row($user, $b));
 
@@ -76,10 +80,14 @@ class ImportBatchManagementController extends Controller
         $count = 0;
         $bytes = 0;
 
-        foreach (ImportBatch::whereIn('id', $ids)->whereNull('file_deleted_at')->get() as $batch) {
+        foreach (ImportBatch::whereIn('id', $ids)->whereNotNull('stored_path')->whereNull('file_deleted_at')->get() as $batch) {
             $size = $disk->exists($batch->stored_path) ? $disk->size($batch->stored_path) : 0;
             $disk->delete($batch->stored_path);
             $batch->update(['file_deleted_at' => now(), 'file_deleted_by' => $request->user()->id, 'deleted_file_bytes' => $size]);
+            ImportAudit::log($batch, 'file_deleted', "ลบไฟล์ต้นฉบับของการนำเข้า #{$batch->id}", [
+                'file' => $batch->original_filename,
+                'bytes' => $size,
+            ]);
             $count++;
             $bytes += $size;
         }
@@ -116,7 +124,8 @@ class ImportBatchManagementController extends Controller
         $disk = Storage::disk('local');
         $summary = ['files' => 0, 'bytes' => 0, 'activeFiles' => 0, 'cancelledFiles' => 0, 'deletedFiles' => 0, 'deletedBytes' => 0, 'missing' => []];
 
-        foreach (ImportBatch::select('id', 'stored_path', 'cancelled_at', 'file_deleted_at', 'deleted_file_bytes')->orderBy('id')->lazy() as $batch) {
+        // Web-form changes have no file, so they don't count here.
+        foreach (ImportBatch::select('id', 'stored_path', 'cancelled_at', 'file_deleted_at', 'deleted_file_bytes')->whereNotNull('stored_path')->orderBy('id')->lazy() as $batch) {
             if ($batch->isFileDeleted()) {
                 $summary['deletedFiles']++;
                 $summary['deletedBytes'] += (int) $batch->deleted_file_bytes;

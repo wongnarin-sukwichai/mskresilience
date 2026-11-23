@@ -70,6 +70,11 @@ class UserManagementController extends Controller
 
         $user->save();
 
+        if ($password) {
+            // The model log never includes the password; record that it was set, without the value.
+            activity('users')->performedOn($user)->event('password')->log("ตั้งรหัสผ่านใหม่ให้ {$user->name}");
+        }
+
         return back()->with('status', 'บันทึกข้อมูลผู้ใช้เรียบร้อยแล้ว');
     }
 

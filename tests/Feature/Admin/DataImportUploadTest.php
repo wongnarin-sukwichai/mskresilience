@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 class DataImportUploadTest extends TestCase
@@ -217,10 +218,11 @@ class DataImportUploadTest extends TestCase
         $this->assertSame(0, WelfareRecord::count());
     }
 
-    public function test_non_excel_upload_is_rejected()
+    public function test_non_spreadsheet_upload_is_rejected()
     {
-        $this->upload($this->staff(), UploadedFile::fake()->create('data.csv', 1, 'text/csv'))
-            ->assertSessionHasErrors(['file' => 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls)']);
+        // CSV is accepted since 2026-11-23 (TOR 4.4-2); anything else is not.
+        $this->upload($this->staff(), UploadedFile::fake()->create('data.txt', 1, 'text/plain'))
+            ->assertSessionHasErrors(['file' => 'รองรับเฉพาะไฟล์ Excel (.xlsx, .xls) หรือ CSV (.csv)']);
     }
 
     public function test_upload_requires_the_group_grant()
@@ -281,6 +283,70 @@ class DataImportUploadTest extends TestCase
         // Now the first one can be cancelled too, which empties the table.
         $this->actingAs($staff)->delete("/import-history/{$first->id}")->assertSessionHas('status');
         $this->assertSame([], $this->elderly());
+    }
+
+    private function csv(string $content, string $name = 'สวัสดิการ.csv'): UploadedFile
+    {
+        $path = tempnam(sys_get_temp_dir(), 'imp').'.csv';
+        file_put_contents($path, $content);
+
+        return new UploadedFile($path, $name, 'text/csv', null, true);
+    }
+
+    public function test_csv_in_utf8_with_bom_is_imported_and_viewable()
+    {
+        $staff = $this->staff();
+        $csv = "\xEF\xBB\xBF".implode(',', self::HEADERS)."\n20/01/2025,R001,ตักศิลา 1,\"1,200\",5,,7\n2025-01-20,R002,,8,9,10,11\n";
+        $this->upload($staff, $this->csv($csv))->assertSessionHasNoErrors();
+        $preview = $this->preview($staff);
+        $this->assertSame([], $preview['errors']);
+        $this->assertSame(2, $preview['summary']['rowCount']);
+
+        $this->actingAs($staff)->post('/data-import/welfare/confirm', ['token' => $preview['token']]);
+        $this->assertSame(['R001' => 1200, 'R002' => 8], $this->elderly());
+        $r001 = WelfareRecord::where('community_id', Community::where('code', 'R001')->value('id'))->sole();
+        $this->assertNull($r001->v_disabled_count);
+
+        $batch = ImportBatch::latest('id')->first();
+        $this->assertStringEndsWith('.csv', $batch->stored_path);
+        $this->actingAs($staff)->getJson("/import-history/{$batch->id}/data")->assertOk()
+            ->assertJsonPath('total', 2)->assertJsonPath('rows.0.status', 'active');
+    }
+
+    public function test_csv_saved_by_thai_excel_as_tis620_with_semicolons_is_read()
+    {
+        $staff = $this->staff();
+        $name = Community::where('code', 'R001')->value('name');
+        $csv = iconv('UTF-8', 'CP874', implode(';', self::HEADERS)."\r\n20/01/2025;R001;{$name};3;4;5;6\r\n");
+        $this->upload($staff, $this->csv($csv));
+        $preview = $this->preview($staff);
+        $this->assertSame([], $preview['errors']);
+        // The Thai name came through intact, so it matched the code without a warning.
+        $this->assertSame([], array_filter($preview['warnings'], fn ($w) => $w['column'] === 'COMMUNITY_NAME'));
+        $this->assertSame($name, $preview['rows'][0]['values']['COMMUNITY_NAME']);
+    }
+
+    public function test_other_file_types_are_rejected_and_csv_template_has_the_headers()
+    {
+        $staff = $this->staff();
+        $this->upload($staff, UploadedFile::fake()->create('data.pdf', 10, 'application/pdf'))->assertSessionHasErrors('file');
+
+        $response = $this->actingAs($staff)->get('/data-import/welfare/template?format=csv')->assertOk();
+        $this->assertSame("\xEF\xBB\xBF".implode(',', ImportColumns::for(WorkGroup::Welfare))."\n", $response->streamedContent());
+    }
+
+    public function test_import_and_cancel_go_to_the_audit_trail()
+    {
+        $staff = $this->staff();
+        $batch = $this->import($staff, [['20/01/2025', 'R001', null, 100, 1, 1, 1]]);
+        $this->actingAs($staff)->delete("/import-history/{$batch->id}");
+
+        $logs = Activity::where('log_name', 'imports')->orderBy('id')->get();
+        $this->assertSame(['imported', 'cancelled'], $logs->pluck('event')->all());
+        $this->assertSame([$staff->id, $staff->id], $logs->pluck('causer_id')->all());
+        $this->assertSame([$batch->id, $batch->id], $logs->pluck('subject_id')->all());
+        $this->assertSame('สวัสดิการ.xlsx', $logs[0]->properties['details']['file']);
+        $this->assertSame(1, $logs[0]->properties['details']['rows']);
     }
 
     public function test_a_batch_overwritten_by_a_later_one_must_wait()

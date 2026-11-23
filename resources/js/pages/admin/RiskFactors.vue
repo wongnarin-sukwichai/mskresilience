@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TorRef from '@/components/admin/TorRef.vue';
 // หน้า 4 ปัจจัยความเสี่ยงและความพร้อม (spec v5 §4). Scores come live from App\Scoring\RiskEngine via
 // RiskFactorsController. Owner decisions 2026-11-10:
 // - Scope is the city (population-weighted) or one community.
@@ -72,6 +73,10 @@ interface View {
     eScore: number | null;
     v: number | null;
     vDelta: number | null;
+    vPeople: number | null;
+    vPeopleDelta: number | null;
+    vSystem: number | null;
+    vSystemDelta: number | null;
     cRaw: number | null;
     cDelta: number | null;
     groups: Record<string, number | null>;
@@ -96,6 +101,10 @@ const view = computed<View | null>(() => {
             eScore: c.hazards[h].e,
             v: c.hazards[h].v,
             vDelta: diff(c.hazards[h].v, prev?.hazards[h].v),
+            vPeople: c.hazards[h].vPeople,
+            vPeopleDelta: diff(c.hazards[h].vPeople, prev?.hazards[h].vPeople),
+            vSystem: c.hazards[h].vSystem,
+            vSystemDelta: diff(c.hazards[h].vSystem, prev?.hazards[h].vSystem),
             cRaw: c.hazards[h].cRaw,
             cDelta: diff(c.hazards[h].cRaw, prev?.hazards[h].cRaw),
             groups: c.groups,
@@ -114,6 +123,10 @@ const view = computed<View | null>(() => {
         eScore: city.exposure[h].score,
         v: city.hazards[h].v,
         vDelta: city.hazards[h].vDelta,
+        vPeople: city.hazards[h].vPeople,
+        vPeopleDelta: city.hazards[h].vPeopleDelta,
+        vSystem: city.hazards[h].vSystem,
+        vSystemDelta: city.hazards[h].vSystemDelta,
         cRaw: city.hazards[h].cRaw,
         cDelta: city.hazards[h].cRawDelta,
         groups: city.groups,
@@ -329,7 +342,7 @@ const selectClass =
                                 ><i class="fa-solid fa-people-group"></i
                             ></span>
                             <div>
-                                <h2 class="font-semibold text-slate-800">ผู้ที่อาจได้รับผลกระทบ (Exposure)</h2>
+                                <h2 class="font-semibold text-slate-800">ผู้ที่อาจได้รับผลกระทบ (Exposure)<TorRef :refs="['คุณลักษณะ 2.2-2']" /></h2>
                                 <p class="text-xs text-slate-400">{{ hazardLabel[hazard] }}</p>
                             </div>
                         </div>
@@ -374,7 +387,7 @@ const selectClass =
                                 <span class="flex h-10 w-10 items-center justify-center rounded-full bg-violet-50 text-violet-600"
                                     ><i class="fa-solid fa-user-shield"></i
                                 ></span>
-                                <h2 class="font-semibold text-slate-800">ความเปราะบาง (Vulnerability)</h2>
+                                <h2 class="font-semibold text-slate-800">ความเปราะบาง (Vulnerability)<TorRef :refs="['คุณลักษณะ 2.2-3']" /></h2>
                             </div>
                             <div class="text-right">
                                 <p class="whitespace-nowrap text-2xl font-bold text-slate-800">
@@ -385,6 +398,48 @@ const selectClass =
                                 </p>
                             </div>
                         </div>
+                        <!-- People / System split (TOR คุณลักษณะ 2.2-3). Display only: HEVC uses V above. -->
+                        <div class="mt-4 grid grid-cols-2 gap-2">
+                            <div
+                                v-for="part in [
+                                    {
+                                        key: 'people',
+                                        label: 'ด้านคน (People)',
+                                        hint: 'กลุ่มเปราะบาง สุขภาพ และผู้ต้องการความช่วยเหลือ',
+                                        icon: 'fa-solid fa-people-group',
+                                        value: view.vPeople,
+                                        delta: view.vPeopleDelta,
+                                    },
+                                    {
+                                        key: 'system',
+                                        label: 'ด้านระบบ (System)',
+                                        hint: 'การเข้าถึงคำเตือนภัยและโครงสร้างพื้นฐาน',
+                                        icon: 'fa-solid fa-network-wired',
+                                        value: view.vSystem,
+                                        delta: view.vSystemDelta,
+                                    },
+                                ]"
+                                :key="part.key"
+                                class="rounded-xl border border-violet-100 bg-violet-50/40 p-3"
+                                :title="part.hint"
+                            >
+                                <p class="flex items-center gap-1.5 text-xs font-medium text-violet-700">
+                                    <i :class="part.icon"></i>{{ part.label }}
+                                </p>
+                                <p class="mt-1 flex items-baseline gap-1.5">
+                                    <span class="text-lg font-bold text-slate-800"><AnimatedNumber :value="part.value" :format="twoDecimals" /></span>
+                                    <span class="text-[11px] text-slate-400">/5</span>
+                                    <span v-if="part.delta !== null" class="ml-auto text-[11px]" :class="deltaClass(part.delta, false)">
+                                        <i :class="deltaIcon(part.delta)"></i> {{ signed(part.delta) }}
+                                    </span>
+                                </p>
+                                <ScoreBar :value="part.value" :max="5" :color="part.value == null ? '#e2e8f0' : scoreColor(part.value, false)" />
+                            </div>
+                        </div>
+                        <p class="mt-1.5 text-[11px] text-slate-400">
+                            แยกคะแนน V เป็นสองด้านเพื่อดูว่าความเปราะบางมาจากคนหรือจากระบบ (ใช้ดูอย่างเดียว คะแนน HEVC ยังใช้ V รวม)
+                            <TorRef :refs="['คุณลักษณะ 2.2-3']" />
+                        </p>
                         <h3 class="mt-4 text-sm font-semibold text-slate-700">กลุ่มเปราะบางสำคัญ (คน)</h3>
                         <div class="mt-3 grid grid-cols-3 gap-2">
                             <div v-for="g in VULNERABLE" :key="g.key" class="rounded-xl border border-slate-100 p-2.5 text-center">
@@ -473,7 +528,7 @@ const selectClass =
                             <span class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"
                                 ><i class="fa-solid fa-shield-heart"></i
                             ></span>
-                            <h2 class="font-semibold text-slate-800">ความพร้อมรับมือ (Capacity)</h2>
+                            <h2 class="font-semibold text-slate-800">ความพร้อมรับมือ (Capacity)<TorRef :refs="['คุณลักษณะ 2.2-4']" /></h2>
                         </div>
                         <h3 class="mt-4 text-sm font-semibold text-slate-700">
                             คะแนนรายด้าน <span class="text-xs font-normal text-slate-400">(0–5, สูง = พร้อม)</span>

@@ -5,7 +5,6 @@ namespace App\Import;
 use App\Import\Sheets\ImportSheet;
 use App\Models\ImportBatch;
 use Illuminate\Support\Facades\Storage;
-use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use Throwable;
 
@@ -37,6 +36,9 @@ class ImportFileReader
     public static function read(ImportBatch $batch): array
     {
         $result = ['fileDeleted' => false, 'missing' => false, 'unreadable' => false, 'headers' => [], 'rows' => [], 'total' => 0, 'counts' => []];
+        if ($batch->isWeb()) {
+            return self::fromPayload($batch, $result);
+        }
         $disk = Storage::disk('local');
         if ($batch->isFileDeleted()) {
             return ['fileDeleted' => true] + $result;
@@ -46,7 +48,7 @@ class ImportFileReader
         }
 
         try {
-            $grid = IOFactory::load($disk->path($batch->stored_path))->getSheet(0)->toArray(null, true, false, false);
+            $grid = SpreadsheetGrid::load($disk->path($batch->stored_path));
         } catch (Throwable) {
             return ['unreadable' => true] + $result;
         }
@@ -76,6 +78,8 @@ class ImportFileReader
 
             if ($batch->isCancelled()) {
                 [$status, $by] = ['cancelled', null];
+            } elseif (! $batch->isApplied()) {
+                [$status, $by] = [$batch->status, null]; // pending / rejected: nothing saved
             } else {
                 $key = self::key($sheet, $positions, $cells);
                 [$status, $by] = isset($statuses[$key]) ? [$statuses[$key]['status'], $statuses[$key]['by'] ?? null] : ['unknown', null];
@@ -86,6 +90,49 @@ class ImportFileReader
             if (count($result['rows']) < self::MAX_ROWS) {
                 $result['rows'][] = ['row' => $i + 1, 'cells' => $cells, 'status' => $status, 'by' => $by];
             }
+        }
+
+        return $result;
+    }
+
+    /**
+     * A web-form change has no file: show its row from the payload, with the values before the change on an extra
+     * row ('previous') for an edit, and 'deleted' for a delete that went through.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private static function fromPayload(ImportBatch $batch, array $result): array
+    {
+        $sheet = ImportSheets::for($batch->work_group);
+        $headers = array_keys($sheet?->rules() ?? []);
+        $result['headers'] = array_map(fn ($name) => ['name' => $name, 'used' => true], $headers);
+        $cells = fn (array $row) => array_map(fn ($h) => isset($row[$h]) && $row[$h] !== '' ? $row[$h] : null, $headers);
+        $add = function (array $row, string $status, ?int $by = null) use (&$result, $cells) {
+            $result['rows'][] = ['row' => count($result['rows']) + 1, 'cells' => $cells($row), 'status' => $status, 'by' => $by];
+            $result['total']++;
+            $result['counts'][$status] = ($result['counts'][$status] ?? 0) + 1;
+        };
+
+        $payload = $batch->payload ?? [];
+        if ($batch->source === 'web_edit' && ! empty($payload['before'])) {
+            $add($payload['before'], 'previous');
+        }
+        $row = $payload['row'] ?? [];
+        $status = match (true) {
+            $batch->isCancelled() => 'cancelled',
+            ! $batch->isApplied() => $batch->status,
+            $batch->source === 'web_delete' => 'deleted',
+            default => null,
+        };
+        if ($status === null) {
+            $positions = array_flip($headers);
+            $statuses = $sheet ? $sheet->rowStatuses($batch) : [];
+            $key = self::key($sheet, $positions, $cells($row));
+            [$status, $by] = isset($statuses[$key]) ? [$statuses[$key]['status'], $statuses[$key]['by'] ?? null] : ['unknown', null];
+            $add($row, $status, $by);
+        } else {
+            $add($row, $status);
         }
 
         return $result;

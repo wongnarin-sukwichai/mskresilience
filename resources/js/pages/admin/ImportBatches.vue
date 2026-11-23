@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue';
 import ImportHistoryTable, { type ImportHistoryRow, type Paginated } from '@/components/admin/ImportHistoryTable.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
@@ -89,7 +90,7 @@ const inputClass =
 
     <AdminLayout title="จัดการประวัตินำเข้า">
         <div class="mb-6 border-l-4 border-blue-600 pl-4">
-            <h1 class="text-2xl font-bold text-slate-800">จัดการประวัตินำเข้า</h1>
+            <h1 class="text-2xl font-bold text-slate-800">จัดการประวัตินำเข้า<TorRef :refs="['4.1.1(2)-3', 'คุณลักษณะ 2.3-5']" /></h1>
             <p class="mt-1 text-sm text-slate-500">รายการนำเข้าข้อมูลทั้งหมดของทุกงาน ค้นหาด้วยชื่อผู้นำเข้า งาน หรือวันที่นำเข้า</p>
         </div>
 

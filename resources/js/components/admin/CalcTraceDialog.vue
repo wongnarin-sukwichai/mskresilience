@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TorRef from '@/components/admin/TorRef.vue';
 // "ดูวิธีคิด" (admin only, owner 2026-11-10). It shows one community's calculation step by step from the trace the
 // engine itself produced (GET calc-trace/{code}), so the numbers are exactly the ones calculated, never a second
 // description of the formula. Used on pages 3 and 4.
@@ -160,7 +161,9 @@ const hevcFormula = computed(() => {
             <div class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl">
                 <div class="flex items-start justify-between gap-3 bg-blue-600 px-6 py-4 text-white">
                     <div>
-                        <h3 class="text-base font-semibold"><i class="fa-solid fa-calculator mr-1.5"></i>วิธีคิดคะแนน · {{ data?.name ?? code }}</h3>
+                        <h3 class="text-base font-semibold">
+                            <i class="fa-solid fa-calculator mr-1.5"></i>วิธีคิดคะแนน · {{ data?.name ?? code }}<TorRef :refs="['4.3-2']" />
+                        </h3>
                         <p class="text-xs text-blue-100">ทุกตัวเลขมาจากการคำนวณจริงของระบบ (เฉพาะผู้ดูแลระบบ)</p>
                     </div>
                     <button

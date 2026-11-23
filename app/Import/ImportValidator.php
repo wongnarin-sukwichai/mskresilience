@@ -5,7 +5,6 @@ namespace App\Import;
 use App\Import\Sheets\ImportSheet;
 use App\Models\Community;
 use Carbon\CarbonImmutable;
-use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use Throwable;
 
@@ -66,20 +65,32 @@ class ImportValidator
      *
      * `saveRows` (community id resolved) is for ImportSheet::save() only. Don't send it to the page.
      */
-    public function validate(string $path): array
+    public function validate(string $path, ?string $extension = null): array
     {
-        $rules = $this->sheet->rules();
-        $this->columns = array_map(fn ($name, $rule) => ['name' => $name, 'rule' => $rule, 'found' => false, 'errors' => 0, 'blanks' => 0, 'warnings' => 0], array_keys($rules), $rules);
-        $columnIndex = array_flip(array_keys($rules));
-        $columns = &$this->columns;
-
         try {
-            $grid = IOFactory::load($path)->getSheet(0)->toArray(null, true, false, false);
+            $grid = SpreadsheetGrid::load($path, $extension);
         } catch (Throwable) {
-            $this->error(null, null, 'อ่านไฟล์ไม่ได้ กรุณาตรวจสอบว่าเป็นไฟล์ Excel (.xlsx หรือ .xls) ที่ถูกต้อง');
+            $this->initColumns();
+            $this->error(null, null, 'อ่านไฟล์ไม่ได้ กรุณาตรวจสอบว่าเป็นไฟล์ Excel (.xlsx, .xls) หรือ CSV ที่ถูกต้อง');
 
             return $this->result([], [], []);
         }
+
+        return $this->validateGrid($grid);
+    }
+
+    /**
+     * The same checks on rows that don't come from a file: the web edit form (App\Import\RecordEditor) builds a
+     * header row plus one data row, so a typed value goes through exactly the rules an imported one does.
+     *
+     * @param  list<list<mixed>>  $grid  header row first
+     */
+    public function validateGrid(array $grid): array
+    {
+        $rules = $this->sheet->rules();
+        $this->initColumns();
+        $columnIndex = array_flip(array_keys($rules));
+        $columns = &$this->columns;
         $this->stage = 'header';
 
         // Header row: map each expected header to its position in the file.
@@ -200,6 +211,12 @@ class ImportValidator
         }
 
         return $this->result($rows, $extra, $this->errors ? [] : $saveRows);
+    }
+
+    private function initColumns(): void
+    {
+        $rules = $this->sheet->rules();
+        $this->columns = array_map(fn ($name, $rule) => ['name' => $name, 'rule' => $rule, 'found' => false, 'errors' => 0, 'blanks' => 0, 'warnings' => 0], array_keys($rules), $rules);
     }
 
     /**

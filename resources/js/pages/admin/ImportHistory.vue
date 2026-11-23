@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ImportHistoryTable, { type ImportHistoryRow, type Paginated } from '@/components/admin/ImportHistoryTable.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import type { SharedData } from '@/types';
 import { Head, usePage } from '@inertiajs/vue3';
@@ -21,7 +22,7 @@ const isAdmin = computed(() => page.props.auth.user.role === 'admin');
 
     <AdminLayout title="ประวัตินำเข้า">
         <div class="mb-6 border-l-4 border-blue-600 pl-4">
-            <h1 class="text-2xl font-bold text-slate-800">ประวัตินำเข้า</h1>
+            <h1 class="text-2xl font-bold text-slate-800">ประวัตินำเข้า<TorRef :refs="['4.1.1(2)-3', 'คุณลักษณะ 2.3-5']" /></h1>
             <p class="mt-1 text-sm text-slate-500">
                 รายการนำเข้าข้อมูลที่ยืนยันแล้ว
                 <template v-if="isAdmin">· ทุกงาน</template>

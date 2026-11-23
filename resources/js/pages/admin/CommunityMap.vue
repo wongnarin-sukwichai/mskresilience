@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ExportButtons from '@/components/admin/ExportButtons.vue';
+import TorRef from '@/components/admin/TorRef.vue';
 // หน้า 3 แผนที่ความเสี่ยงรายชุมชน (spec v5 §3). Scores come live from App\Scoring\RiskEngine via
 // CommunityMapController. Owner decisions 2026-11-10:
 // - E/V/C layers on a 0–5 scale with their own legend; red always means bad.
@@ -7,6 +9,8 @@
 // Leaflet objects are plain module variables, not reactive (see CLAUDE.md "Map pages").
 import AnimatedNumber from '@/components/admin/AnimatedNumber.vue';
 import CalcTraceDialog from '@/components/admin/CalcTraceDialog.vue';
+import LineChart from '@/components/admin/LineChart.vue';
+import RadarChart from '@/components/admin/RadarChart.vue';
 import ScoreBar from '@/components/admin/ScoreBar.vue';
 import { communityBoundaries } from '@/data/communityBoundaries';
 import { MUNICIPALITY_BOUNDARY, communities as localCommunities } from '@/data/mahasarakham';
@@ -16,7 +20,6 @@ import {
     SCORE_PALETTE,
     formatScore,
     formatThaiDate,
-    groupLabel,
     hazardIcon,
     hazardLabel,
     levelOf,
@@ -36,7 +39,25 @@ const props = defineProps<{
     initialHazard: string | null;
     cityDominant: HazardKey | null;
     communities: CommunityRiskDetail[];
+    cityRecoveryItems: Record<'R1' | 'R2' | 'R3' | 'R4' | 'R5', number | null> | null;
+    trend: {
+        years: number[];
+        communities: Record<
+            string,
+            { year: number; multi: number | null; level: string | null; hazards: Partial<Record<HazardKey, number | null>>; stale: boolean }[]
+        >;
+        consecutiveHigh: Record<string, number>;
+    } | null;
 }>();
+
+// R1–R5 radar axes (TOR 4.1.1(4)); labels follow the TOR's own wording.
+const RECOVERY_AXES = [
+    { key: 'R1', label: 'แผนฟื้นฟู' },
+    { key: 'R2', label: 'Build Back Better' },
+    { key: 'R3', label: 'เศรษฐกิจและสังคม' },
+    { key: 'R4', label: 'กลุ่มเปราะบาง' },
+    { key: 'R5', label: 'ถอดบทเรียน' },
+] as const;
 
 // "ดูวิธีคิด" is admin-only (the endpoint is role:admin too).
 const isAdmin = computed(() => usePage<SharedData>().props.auth.user?.role === 'admin');
@@ -278,32 +299,26 @@ function syncUrl() {
 // Panel
 // ---------------------------------------------------------------------------------------------------------------
 // The hazard the panel's E / gap / C6 / C7 rows describe: the selected one, or this community's dominant hazard.
+// Trend of the selected community for the filter's hazard (ภัยรวม = MULTI).
+const selectedTrend = computed(() =>
+    selected.value && props.trend
+        ? (props.trend.communities[selected.value.code] ?? []).map((p) => ({
+              year: p.year,
+              value: hazard.value === 'ALL' ? p.multi : (p.hazards[hazard.value] ?? null),
+              stale: p.stale,
+          }))
+        : [],
+);
+const trendChange = computed(() => {
+    const points = selectedTrend.value.filter((p) => p.value !== null);
+    return points.length > 1 ? points[points.length - 1].value! - points[0].value! : null;
+});
+const consecutiveHigh = computed(() => (selected.value && props.trend ? (props.trend.consecutiveHigh[selected.value.code] ?? 0) : 0));
+const trendBands = RISK_LEVEL_KEYS.map((k, i) => ({ from: [0, 25, 50, 75][i], to: [25, 50, 75, 100][i], color: riskLevels[k].color }));
+
 const panelHazard = computed<HazardKey | null>(() =>
     hazard.value === 'ALL' ? (selected.value?.multi?.dominant ?? props.cityDominant) : hazard.value,
 );
-
-const C5_HAZARDS: HazardKey[] = ['FLOOD', 'HEAT'];
-const panelCapacity = computed(() => {
-    const g = selected.value?.groups;
-    const h = panelHazard.value;
-    if (!g || !h) return [];
-    return [
-        { key: 'C4', label: `C4 ${groupLabel.C4}`, value: g.C4 },
-        ...(C5_HAZARDS.includes(h) ? [{ key: 'C5', label: `C5 ${groupLabel.C5}`, value: g.C5 }] : []),
-        { key: 'C6', label: `C6 ${groupLabel.C6}`, value: g[`C6_${h}`] },
-        { key: 'C7', label: `C7 ${groupLabel.C7}`, value: g[`C7_${h}`] },
-        { key: 'C8', label: `C8 ${groupLabel.C8}`, value: g.C8 },
-    ];
-});
-
-const keyGroups = computed(() => {
-    const counts = selected.value?.counts ?? {};
-    return [
-        { key: 'v_elderly_count', label: 'ผู้สูงอายุ', icon: 'fa-solid fa-person-cane' },
-        { key: 'v_assisted_evacuation_count', label: 'ต้องช่วยอพยพ', icon: 'fa-solid fa-wheelchair' },
-        { key: 'v_medical_dependent_count', label: 'พึ่งพาบริการแพทย์', icon: 'fa-solid fa-kit-medical' },
-    ].map((g) => ({ ...g, count: counts[g.key] ?? null }));
-});
 
 const selectedScore = computed(() => {
     const c = selected.value;
@@ -327,7 +342,6 @@ function deltaIcon(delta: number) {
 }
 
 const oneDecimal = (v: number) => v.toFixed(1);
-const percent = (v: number) => `${v.toFixed(1)}%`;
 const card = 'rounded-2xl border border-slate-100 bg-white shadow-sm';
 const selectClass =
     'rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100';
@@ -375,6 +389,7 @@ const selectClass =
                     <option v-for="l in LAYERS" :key="l.key" :value="l.key">{{ l.label }}</option>
                 </select>
             </label>
+            <ExportButtons v-if="communities.length" class="ml-auto pb-1" :excel-href="route('export.risk', { year: selectedYear ?? undefined })" />
         </div>
 
         <div v-if="!communities.length" class="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">
@@ -531,7 +546,7 @@ const selectClass =
                             <p class="mt-1 text-xs">ขาดข้อมูลจาก: {{ selected.missingSheets.join(', ') }}</p>
                         </div>
 
-                        <template v-else-if="selected.hazards && selected.groups">
+                        <template v-else-if="selected.hazards">
                             <!-- Risk -->
                             <div class="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-4">
                                 <div>
@@ -563,7 +578,7 @@ const selectClass =
 
                             <!-- 5 hazards -->
                             <div>
-                                <h3 class="mb-2 font-semibold text-slate-700">คะแนนรายภัย (0–100)</h3>
+                                <h3 class="mb-2 font-semibold text-slate-700">คะแนนรายภัย (0–100)<TorRef :refs="['4.1.1(1)-4']" /></h3>
                                 <ul class="space-y-2">
                                     <li
                                         v-for="h in HAZARD_KEYS"
@@ -588,86 +603,74 @@ const selectClass =
                                 </ul>
                             </div>
 
-                            <template v-if="panelHazard">
-                                <p class="rounded-lg bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
-                                    รายละเอียดด้านล่างเป็นของ{{ hazard === 'ALL' ? 'ภัยเด่น' : 'ภัย' }}:
-                                    <span class="font-semibold">{{ hazardLabel[panelHazard] }}</span>
+                            <!-- The E/V/C detail of the selected hazard was removed here (owner 2026-11-23): it repeated page 4
+                                 (ปัจจัยความเสี่ยง), which shows it with Δ and the score breakdown. The button below goes there. -->
+
+                            <!-- HEVC trend per fiscal year (TOR 4.1.2, คุณลักษณะ 2.6-1); hollow = no new data that year -->
+                            <div v-if="selectedTrend.length > 1" class="rounded-xl border border-slate-100 p-3">
+                                <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                    <h3 class="text-sm font-semibold text-slate-700">
+                                        แนวโน้ม{{ hazard === 'ALL' ? 'ความเสี่ยงรวม' : hazardLabel[hazard] }}รายปีงบ<TorRef
+                                            :refs="['4.1.2', 'คุณลักษณะ 2.6-1']"
+                                        />
+                                    </h3>
+                                    <span
+                                        v-if="trendChange !== null"
+                                        class="text-xs font-medium"
+                                        :class="trendChange > 0.5 ? 'text-red-600' : trendChange < -0.5 ? 'text-emerald-600' : 'text-slate-500'"
+                                    >
+                                        <i
+                                            class="fa-solid"
+                                            :class="trendChange > 0.5 ? 'fa-arrow-trend-up' : trendChange < -0.5 ? 'fa-arrow-trend-down' : 'fa-minus'"
+                                        ></i>
+                                        {{ trendChange > 0.5 ? 'เพิ่มขึ้น' : trendChange < -0.5 ? 'ลดลง' : 'ทรงตัว' }}
+                                        {{ trendChange > 0 ? '+' : '' }}{{ trendChange.toFixed(1) }}
+                                    </span>
+                                </div>
+                                <p v-if="consecutiveHigh >= 2" class="mb-1 rounded-lg bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700">
+                                    <i class="fa-solid fa-bell mr-1"></i>เสี่ยงค่อนข้างสูงขึ้นไปต่อเนื่อง {{ consecutiveHigh }} ปี
+                                    (ความเสี่ยงรวม)<TorRef :refs="['คุณลักษณะ 2.6-2']" />
                                 </p>
+                                <LineChart
+                                    :categories="selectedTrend.map((p) => `ปีงบ ${p.year}`)"
+                                    :series="[
+                                        {
+                                            label: 'HEVC',
+                                            color: '#2563eb',
+                                            values: selectedTrend.map((p) => p.value),
+                                            hollow: selectedTrend.map((p) => p.stale),
+                                        },
+                                    ]"
+                                    :max="100"
+                                    :bands="trendBands"
+                                    :height="190"
+                                    :width="320"
+                                />
+                            </div>
 
-                                <!-- Exposure -->
-                                <div>
-                                    <h3 class="mb-1 font-semibold text-slate-700">ผู้ที่อาจได้รับผลกระทบ</h3>
-                                    <p class="text-slate-600">
-                                        <span class="text-lg font-bold text-slate-800"
-                                            ><AnimatedNumber :value="selected.counts[`e_numerator_count_${panelHazard.toLowerCase()}`]"
-                                        /></span>
-                                        คน ·
-                                        <AnimatedNumber :value="selected.hazards[panelHazard].ePercent" :format="percent" /> ของประชากร
-                                        <span class="text-xs text-slate-400">(คะแนน E {{ formatScore(selected.hazards[panelHazard].e, 0) }}/5)</span>
-                                    </p>
-                                </div>
-
-                                <!-- Key groups -->
-                                <div>
-                                    <h3 class="mb-2 font-semibold text-slate-700">กลุ่มสำคัญ</h3>
-                                    <ul class="space-y-1.5">
-                                        <li v-for="g in keyGroups" :key="g.key" class="flex items-center justify-between">
-                                            <span class="text-slate-600"><i :class="g.icon" class="mr-2 w-4 text-slate-400"></i>{{ g.label }}</span>
-                                            <span class="font-semibold text-slate-800"><AnimatedNumber :value="g.count" /> คน</span>
-                                        </li>
-                                    </ul>
-                                </div>
-
-                                <!-- Gaps -->
-                                <div>
-                                    <h3 class="mb-2 font-semibold text-slate-700">
-                                        ช่องว่าง <span class="text-xs font-normal text-slate-400">(0–5, สูง = แย่)</span>
-                                    </h3>
-                                    <ul class="space-y-2">
-                                        <li
-                                            v-for="gap in [
-                                                { key: 'w', label: groupLabel.V_WARNING, value: selected.groups.V_WARNING },
-                                                {
-                                                    key: 'i',
-                                                    label: `${groupLabel.V_INFRA} (${hazardLabel[panelHazard]})`,
-                                                    value: selected.groups[`V_INFRA_${panelHazard}`],
-                                                },
-                                            ]"
-                                            :key="gap.key"
-                                            class="grid grid-cols-[1fr_96px_32px] items-center gap-2"
-                                        >
-                                            <span class="truncate text-xs text-slate-600">{{ gap.label }}</span>
-                                            <ScoreBar
-                                                :value="gap.value ?? null"
-                                                :max="5"
-                                                :color="gap.value === null ? NA_COLOR : scoreColor(gap.value!, false)"
-                                            />
-                                            <span class="text-right text-xs font-semibold text-slate-700">{{ formatScore(gap.value) }}</span>
-                                        </li>
-                                    </ul>
-                                </div>
-
-                                <!-- Capacity -->
-                                <div>
-                                    <h3 class="mb-2 font-semibold text-slate-700">
-                                        ความพร้อมรับมือ <span class="text-xs font-normal text-slate-400">(0–5, สูง = พร้อม)</span>
-                                    </h3>
-                                    <ul class="space-y-2">
-                                        <li v-for="cap in panelCapacity" :key="cap.key" class="grid grid-cols-[1fr_96px_32px] items-center gap-2">
-                                            <span class="truncate text-xs text-slate-600">{{ cap.label }}</span>
-                                            <ScoreBar :value="cap.value ?? null" :max="5" />
-                                            <span class="text-right text-xs font-semibold text-slate-700">{{ formatScore(cap.value) }}</span>
-                                        </li>
-                                        <li class="grid grid-cols-[1fr_96px_32px] items-center gap-2 border-t border-slate-100 pt-2">
-                                            <span class="text-xs font-semibold text-slate-700">C รวม {{ hazardLabel[panelHazard] }}</span>
-                                            <ScoreBar :value="selected.hazards[panelHazard].cRaw" :max="5" color="#0d9488" />
-                                            <span class="text-right text-xs font-bold text-slate-800">{{
-                                                formatScore(selected.hazards[panelHazard].cRaw)
-                                            }}</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </template>
+                            <!-- R1–R5 readiness radar (TOR 4.1.1(4), คุณลักษณะ 2.5-1) -->
+                            <div v-if="Object.values(selected.recoveryItems).some((v) => v !== null)" class="rounded-xl border border-slate-100 p-3">
+                                <h3 class="text-sm font-semibold text-slate-700">
+                                    ความพร้อมด้านการฟื้นฟู R1–R5<TorRef :refs="['4.1.1(4)', 'คุณลักษณะ 2.5-1']" />
+                                </h3>
+                                <RadarChart
+                                    :axes="[...RECOVERY_AXES]"
+                                    :series="[
+                                        { label: selected.name, color: '#7c3aed', values: RECOVERY_AXES.map((a) => selected!.recoveryItems[a.key]) },
+                                        ...(cityRecoveryItems
+                                            ? [
+                                                  {
+                                                      label: 'ค่าเฉลี่ยเมือง',
+                                                      color: '#94a3b8',
+                                                      values: RECOVERY_AXES.map((a) => cityRecoveryItems![a.key]),
+                                                      dashed: true,
+                                                  },
+                                              ]
+                                            : []),
+                                    ]"
+                                />
+                                <p class="text-center text-[11px] text-slate-400">ด้านที่หดเข้าหาศูนย์กลาง = จุดอ่อน · จุดกลวง = ไม่มีข้อมูล</p>
+                            </div>
 
                             <!-- Response + recovery -->
                             <div class="grid grid-cols-2 gap-2">
@@ -688,10 +691,22 @@ const selectClass =
                         </template>
 
                         <Link
-                            :href="route('risk-factors.index', { community: selected.code })"
+                            :href="
+                                route('risk-factors.index', {
+                                    community: selected.code,
+                                    hazard: panelHazard ?? undefined,
+                                    year: selectedYear ?? undefined,
+                                })
+                            "
                             class="flex items-center justify-center gap-2 rounded-xl border border-blue-200 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50"
                         >
-                            ดูปัจจัยเพิ่มเติม <i class="fa-solid fa-arrow-right"></i>
+                            ดูปัจจัยเสี่ยง E / V / C ของชุมชนนี้ <i class="fa-solid fa-arrow-right"></i>
+                        </Link>
+                        <Link
+                            :href="route('reports.funding', selected.code)"
+                            class="flex items-center justify-center gap-2 rounded-xl border border-slate-200 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                        >
+                            <i class="fa-solid fa-file-invoice-dollar"></i>รายงานประกอบการของบประมาณ
                         </Link>
                         <button
                             v-if="isAdmin"

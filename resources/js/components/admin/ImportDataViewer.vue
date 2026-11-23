@@ -5,7 +5,9 @@ import type { ImportHistoryRow } from './ImportHistoryTable.vue';
 // "ดูข้อมูล" modal for one import (owner decision 2026-11-03, instead of downloading the file). It fetches
 // ImportHistoryController::data: the kept file read back as-is (App\Import\ImportFileReader, NOT re-validated),
 // with each row's current status. Opened from ImportHistoryTable.
-type RowStatus = 'active' | 'replaced' | 'cancelled' | 'unknown';
+// A web-form change (no file) shows its row from the batch's payload: 'previous' = the values before an edit,
+// 'deleted' = a delete that went through. 'pending' / 'rejected' = approval mode, nothing saved.
+type RowStatus = 'active' | 'replaced' | 'cancelled' | 'unknown' | 'pending' | 'rejected' | 'deleted' | 'previous';
 type ViewerData = {
     batch: ImportHistoryRow;
     maxRows: number;
@@ -31,6 +33,10 @@ const statusMeta: Record<RowStatus, { label: string; badge: string }> = {
     replaced: { label: 'ถูกทับแล้ว', badge: 'bg-amber-50 text-amber-700' },
     cancelled: { label: 'ยกเลิกแล้ว', badge: 'bg-slate-100 text-slate-500' },
     unknown: { label: 'ไม่พบในระบบ', badge: 'bg-red-50 text-red-600' },
+    pending: { label: 'รออนุมัติ', badge: 'bg-amber-50 text-amber-700' },
+    rejected: { label: 'ไม่อนุมัติ', badge: 'bg-red-50 text-red-600' },
+    deleted: { label: 'ลบแถวนี้แล้ว', badge: 'bg-red-50 text-red-600' },
+    previous: { label: 'ค่าก่อนแก้ไข', badge: 'bg-slate-100 text-slate-500' },
 };
 
 watch(
@@ -99,11 +105,21 @@ onUnmounted(() => document.removeEventListener('keydown', closeOnEscape));
             <template v-else-if="data">
                 <!-- Batch recap -->
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 px-6 py-3 text-xs text-slate-500">
-                    <span><i class="fa-solid fa-file-excel mr-1 text-emerald-600"></i>{{ data.batch.filename }}</span>
+                    <span v-if="data.batch.source !== 'file'" class="rounded-md bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700">
+                        <i class="fa-solid fa-pen-to-square mr-1"></i>{{ data.batch.sourceLabel }} · {{ data.batch.filename }}
+                    </span>
+                    <span v-else><i class="fa-solid fa-file-excel mr-1 text-emerald-600"></i>{{ data.batch.filename }}</span>
                     <span>นำเข้าเมื่อ {{ formatDateTime(data.batch.createdAt) }} โดย {{ data.batch.user ?? '–' }}</span>
                     <span>{{ data.batch.rowCount }} แถว · {{ data.batch.communityCount }} ชุมชน</span>
                     <span v-if="data.batch.cancelledAt" class="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">
                         ยกเลิกแล้วโดย {{ data.batch.cancelledBy ?? '–' }} เมื่อ {{ formatDateTime(data.batch.cancelledAt) }}
+                    </span>
+                    <span v-else-if="data.batch.status === 'pending'" class="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700">รออนุมัติ</span>
+                    <span v-else-if="data.batch.status === 'rejected'" class="rounded-md bg-red-50 px-2 py-0.5 text-red-700">
+                        ไม่อนุมัติโดย {{ data.batch.reviewedBy ?? '–' }}: {{ data.batch.reviewNote ?? '–' }}
+                    </span>
+                    <span v-else-if="data.batch.reviewedBy" class="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                        อนุมัติโดย {{ data.batch.reviewedBy }}
                     </span>
                 </div>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TorRef from '@/components/admin/TorRef.vue';
 // เปรียบเทียบรายปี (owner-approved from the /compare-preview mock, 2026-11-11). Every score comes from RiskEngine via
 // YearComparisonController: two fiscal years A and B, each community's latest record on or before each side's date,
 // and the criteria set of that record's year. The page only classifies communities (ลดลง/เพิ่มขึ้น/ทรงตัว) by the
@@ -470,7 +471,8 @@ onUnmounted(() => {
                         </span>
                         <span class="text-xs text-slate-400">ความเสี่ยงรวมทั้งเมือง</span>
                     </div>
-                    <RiskGauge :value="s.value" />
+                    <!-- Capped: on a tablet the A/B cards stack full width and the gauge grew to ~700px (phase 5). -->
+                    <div class="mx-auto max-w-xs"><RiskGauge :value="s.value" /></div>
                     <dl class="mt-3 space-y-2 text-sm">
                         <div class="flex justify-between gap-2">
                             <dt class="text-slate-400">ข้อมูล ณ วันที่</dt>
@@ -534,7 +536,7 @@ onUnmounted(() => {
             <!-- Hazards -->
             <section ref="barsEl" class="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <h2 class="font-semibold text-slate-800">รายภัย (เฉพาะ {{ comparable.length }} ชุมชนที่เทียบได้)</h2>
+                    <h2 class="font-semibold text-slate-800">รายภัย (เฉพาะ {{ comparable.length }} ชุมชนที่เทียบได้)<TorRef :refs="['4.1.2']" /></h2>
                     <div class="flex items-center gap-3 text-xs text-slate-500">
                         <span class="flex items-center gap-1"><span class="h-2.5 w-4 rounded-sm bg-slate-300"></span>A {{ yearA }}</span>
                         <span class="flex items-center gap-1"><span class="h-2.5 w-4 rounded-sm bg-blue-500"></span>B {{ yearB }}</span>

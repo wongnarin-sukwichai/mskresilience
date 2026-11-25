@@ -554,7 +554,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
             <div class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
                 <div class="flex items-center justify-between bg-blue-600 px-6 py-4">
                     <h3 class="text-base font-semibold text-white">
-                        <i class="fa-solid fa-circle-info mr-1.5"></i>สรุปด้วย AI: ค่าใช้จ่ายและข้อมูลที่ส่ง
+                        <i class="fa-solid fa-circle-info mr-1.5"></i>สรุปด้วย AI ประมาณการ
                     </h3>
                     <button type="button" class="text-blue-100 hover:text-white" aria-label="ปิด" @click="costOpen = false">
                         <i class="fa-solid fa-xmark"></i>
@@ -565,7 +565,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                         <h4 class="font-semibold text-slate-800">ค่าใช้จ่าย</h4>
                         <ul class="mt-1 list-disc space-y-1 pl-5 text-slate-600">
                             <li>
-                                ใช้โมเดล {{ summary.pricing.model }} ราคา ${{ summary.pricing.inputPerMTok }} ต่อข้อมูลส่งเข้า 1 ล้าน token และ ${{
+                                ราคา ${{ summary.pricing.inputPerMTok }} ต่อข้อมูลส่งเข้า 1 ล้าน token และ ${{
                                     summary.pricing.outputPerMTok
                                 }}
                                 ต่อข้อความตอบกลับ 1 ล้าน token

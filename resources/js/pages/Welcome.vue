@@ -483,9 +483,11 @@ onUnmounted(() => {
                     <i class="fa-solid fa-shield-halved text-base sm:text-xl"></i>
                 </div>
                 <div class="flex min-w-0 flex-col">
-                    <h1 class="truncate text-sm font-bold leading-tight text-slate-800 sm:text-[17px] lg:text-lg">ระบบบริหารข้อมูลความเสี่ยง</h1>
+                    <h1 class="truncate text-sm font-bold leading-tight text-slate-800 sm:text-[17px] lg:text-lg">
+                        แพลตฟอร์มข้อมูลการจัดการภัยพิบัติ
+                    </h1>
                     <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500 sm:text-[11px] lg:text-xs">
-                        ความเปราะบางของชุมชน อ.เมือง จ.มหาสารคาม
+                        MSK-Resilience Dashboard · อ.เมือง จ.มหาสารคาม
                     </p>
                 </div>
             </div>

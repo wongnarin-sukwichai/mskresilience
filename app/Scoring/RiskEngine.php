@@ -230,6 +230,9 @@ class RiskEngine
 
             return [
                 'value' => $weight > 0 ? $sum / $weight : null,
+                // The numerator and denominator, so the admin ⓘ can show the division with real numbers.
+                'sum' => $sum,
+                'weight' => $weight,
                 'communities' => $count,
                 'delta' => $deltaWeight > 0 ? $deltaSum / $deltaWeight : null,
                 'deltaCommunities' => $deltaCount,
@@ -252,6 +255,8 @@ class RiskEngine
                 'vSystemDelta' => $vSystem['delta'],
                 'cRaw' => $cRaw['value'],
                 'cRawDelta' => $cRaw['delta'],
+                'cRawSum' => $cRaw['sum'],
+                'cRawWeight' => $cRaw['weight'],
             ];
         }
         $dominant = null;
@@ -264,10 +269,12 @@ class RiskEngine
         $groupKeys = $ok->flatMap(fn ($c) => array_keys($c['groups']))->unique()->values();
         $groups = [];
         $groupDeltas = [];
+        $groupSums = [];
         foreach ($groupKeys as $key) {
             $avg = $average(fn ($c) => $c['groups'][$key] ?? null);
             $groups[$key] = $avg['value'];
             $groupDeltas[$key] = $avg['delta'];
+            $groupSums[$key] = ['sum' => $avg['sum'], 'weight' => $avg['weight']];
         }
 
         $counts = [];
@@ -283,6 +290,7 @@ class RiskEngine
             'hazards' => $hazards,
             'groups' => $groups,
             'groupDeltas' => $groupDeltas,
+            'groupSums' => $groupSums,
             'counts' => $counts,
             'totalCommunities' => $communities->count(),
             'scoredCommunities' => $ok->count(),

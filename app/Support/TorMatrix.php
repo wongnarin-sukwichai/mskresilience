@@ -53,7 +53,7 @@ class TorMatrix
                     'where' => [$p('ภาพรวมความเสี่ยง', 'risk-overview.index')]],
                 ['ref' => '4.1.1(1)-3', 'status' => 'done',
                     'text' => 'รองรับการปรับค่าน้ำหนัก (Weight Adjustment) ของแต่ละองค์ประกอบผ่านระบบผู้ดูแล (Admin Setting) โดยไม่ต้องแก้ไขโค้ดโปรแกรม',
-                    'where' => [$p('จัดการเกณฑ์คะแนน', 'scoring-criteria.index')]],
+                    'where' => [$p('จัดการค่าน้ำหนัก', 'scoring-criteria.index')]],
                 ['ref' => '4.1.1(1)-4', 'status' => 'done',
                     'text' => 'แสดงผลคะแนนย่อย (Sub-Scores) และคะแนนรวม (Composite Score) ของแต่ละชุมชน',
                     'where' => [$p('แผนที่รายชุมชน', 'community-map.index'), $p('ปัจจัยความเสี่ยง', 'risk-factors.index')]],
@@ -116,7 +116,7 @@ class TorMatrix
                     'where' => [$p('จัดการสมาชิก', 'users.index')]],
                 ['ref' => '4.1.1(6)-1', 'status' => 'done',
                     'text' => 'ผู้ดูแลระบบ: จัดการค่าน้ำหนัก, อนุมัติข้อมูล, จัดการผู้ใช้งาน',
-                    'where' => [$p('จัดการเกณฑ์คะแนน', 'scoring-criteria.index'), $p('อนุมัติข้อมูล', 'import-approvals.index'), $p('จัดการสมาชิก', 'users.index')],
+                    'where' => [$p('จัดการค่าน้ำหนัก', 'scoring-criteria.index'), $p('อนุมัติข้อมูล', 'import-approvals.index'), $p('จัดการสมาชิก', 'users.index')],
                     'note' => 'โหมดอนุมัติเปิด/ปิดได้ที่ ตั้งค่าทั่วไป'],
                 ['ref' => '4.1.1(6)-2', 'status' => 'done',
                     'text' => 'ผู้บันทึกข้อมูล: อัปโหลดข้อมูลเฉพาะส่วนงานตนเอง, แก้ไขข้อมูลในขอบเขตที่ได้รับอนุญาต',
@@ -192,7 +192,7 @@ class TorMatrix
                 ['ref' => 'คุณลักษณะ 2.2-3', 'status' => 'done', 'text' => 'คำนวณ Vulnerability: แยก People/System ได้ (ตรวจรับ: ทดสอบคะแนน)', 'where' => [$p('ปัจจัยความเสี่ยง', 'risk-factors.index')]],
                 ['ref' => 'คุณลักษณะ 2.2-4', 'status' => 'done', 'text' => 'คำนวณ Capacity: คำนวณ Mitigation Factor (ตรวจรับ: ตรวจผลลัพธ์)', 'where' => [$p('ปัจจัยความเสี่ยง', 'risk-factors.index')]],
                 ['ref' => 'คุณลักษณะ 2.2-5', 'status' => 'done', 'text' => 'คำนวณ HEVC: แปลงค่าเป็น 0–100 (ตรวจรับ: เทียบกับตัวอย่าง)', 'where' => [$p('ภาพรวมความเสี่ยง', 'risk-overview.index')]],
-                ['ref' => 'คุณลักษณะ 2.2-6', 'status' => 'done', 'text' => 'ปรับค่าน้ำหนักได้: Admin สามารถตั้งค่า weight (ตรวจรับ: ทดสอบปรับค่า)', 'where' => [$p('จัดการเกณฑ์คะแนน', 'scoring-criteria.index')]],
+                ['ref' => 'คุณลักษณะ 2.2-6', 'status' => 'done', 'text' => 'ปรับค่าน้ำหนักได้: Admin สามารถตั้งค่า weight (ตรวจรับ: ทดสอบปรับค่า)', 'where' => [$p('จัดการค่าน้ำหนัก', 'scoring-criteria.index')]],
             ]],
 
             ['section' => 'คุณลักษณะ 2.3 ระบบอัปโหลดข้อมูล', 'items' => [

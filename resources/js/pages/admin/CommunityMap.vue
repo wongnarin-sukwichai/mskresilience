@@ -353,7 +353,7 @@ const selectClass =
     <AdminLayout title="แผนที่ความเสี่ยงรายชุมชน">
         <!-- Filters (sticky, same as page 2) -->
         <div
-            class="sticky -top-4 z-[1000] -mx-4 mb-5 flex flex-wrap items-end gap-3 border-b border-slate-200/70 bg-slate-50/90 px-4 py-3 backdrop-blur lg:-top-6 lg:-mx-6 lg:px-6"
+            class="sticky -top-4 z-20 -mx-4 mb-5 flex flex-wrap items-end gap-3 border-b border-slate-200/70 bg-slate-50/90 px-4 py-3 backdrop-blur lg:-top-6 lg:-mx-6 lg:px-6"
         >
             <label class="block">
                 <span class="mb-1 block text-xs font-semibold text-slate-500">เลือกภัย</span>
@@ -398,8 +398,9 @@ const selectClass =
         </div>
 
         <div v-else class="grid gap-5 xl:grid-cols-3">
-            <!-- Map -->
-            <div :class="[card, 'overflow-hidden xl:col-span-2', fullscreen ? 'fixed inset-0 z-[1100] rounded-none' : 'relative']">
+            <!-- Map. `isolate` keeps Leaflet's own z-indexes (panes 400+, controls 1000) inside this card, so the sticky
+                 filters (z-20) and the header's menus can sit above the map without huge z-index values. -->
+            <div :class="[card, 'overflow-hidden xl:col-span-2', fullscreen ? 'fixed inset-0 z-[1100] rounded-none' : 'relative isolate']">
                 <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
                     <div class="min-w-0">
                         <h2 class="truncate font-semibold text-slate-800">{{ layerTitle }}</h2>

@@ -48,7 +48,7 @@ const HAZARDS = [
     { value: 'FLOOD', label: 'อุทกภัย' },
     { value: 'FIRE', label: 'อัคคีภัย' },
     { value: 'STORM', label: 'วาตภัย' },
-    { value: 'HEAT', label: 'คลื่นความร้อน' },
+    { value: 'HEAT', label: 'ความร้อน' },
     { value: 'PM25', label: 'PM2.5' },
 ];
 

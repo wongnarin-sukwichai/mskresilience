@@ -4,6 +4,7 @@
 // - The หน่วยงานผู้พัฒนาระบบ block (at the bottom) uses the owner's text verbatim.
 // - The header uses the owner's banner image (public/img/banner.webp, 2026-11-10).
 // Text follows the spec's wording; keep it in sync if the spec changes.
+import ReferenceSources from '@/components/admin/ReferenceSources.vue';
 import Reveal from '@/components/admin/Reveal.vue';
 import { RISK_LEVEL_KEYS, SCORE_PALETTE, formatThaiDate, riskLevels } from '@/data/riskDisplay';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -110,7 +111,7 @@ const card = 'h-full rounded-2xl border border-slate-100 bg-white p-6 shadow-sm'
 
     <AdminLayout title="เกี่ยวกับระบบและการอ่านข้อมูล">
         <!-- Header -->
-        <!-- Background: the owner's banner (public/img/banner.png, served as the compressed banner.webp). It already
+        <!-- Background: the owner's banner (public/img/banner.webp; the 2.6 MB PNG original was removed 2026-11-26). It already
              contains the municipality outline at the top right, so it is anchored right and slightly above center to
              keep that outline in view on wide screens. A left-side gradient keeps the white text readable. -->
         <div class="relative overflow-hidden rounded-3xl bg-blue-900 p-8 text-white shadow-lg sm:p-10">
@@ -121,8 +122,8 @@ const card = 'h-full rounded-2xl border border-slate-100 bg-white p-6 shadow-sm'
             ></div>
             <div class="absolute inset-0 bg-gradient-to-r from-blue-950/85 via-blue-900/55 to-transparent" aria-hidden="true"></div>
             <div class="relative max-w-2xl">
-                <p class="text-sm font-semibold uppercase tracking-widest text-sky-200">MSK-Resilience</p>
-                <h1 class="mt-2 text-3xl font-bold leading-tight drop-shadow sm:text-4xl">ระบบข้อมูลเพื่อเมืองปลอดภัยและยืดหยุ่น</h1>
+                <p class="text-sm font-semibold uppercase tracking-widest text-sky-200">MSK-Resilience Dashboard</p>
+                <h1 class="mt-2 text-3xl font-bold leading-tight drop-shadow sm:text-4xl">แพลตฟอร์มข้อมูลการจัดการภัยพิบัติ</h1>
                 <p class="mt-3 text-lg text-blue-100">ข้อมูลเพื่อการตัดสินใจ ลดความเสี่ยง ลดผลกระทบ สร้างเมืองที่พร้อมรับมืออนาคต</p>
                 <div class="mt-6 flex flex-wrap gap-3 text-sm">
                     <span class="rounded-full bg-white/15 px-4 py-1.5 backdrop-blur">
@@ -293,6 +294,9 @@ const card = 'h-full rounded-2xl border border-slate-100 bg-white p-6 shadow-sm'
                 </Link>
             </Reveal>
         </div>
+
+        <!-- Reference sources (owner's public/ref/ref.docx, 2026-11-26) — reading only, not used in any calculation. -->
+        <ReferenceSources />
 
         <!-- Developer (spec §1 "หน่วยงานผู้พัฒนาระบบ"; content from the owner, 2026-11-10) -->
         <Reveal class="mt-8">

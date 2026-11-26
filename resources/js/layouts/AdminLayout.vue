@@ -76,25 +76,27 @@ const navItems = computed<(NavLink | NavGroup)[]>(() => [
               },
           ]
         : []),
-    // ตั้งค่าระบบ module — for admin, an expandable submenu of admin-only pages (routes/admin.php). For
-    // staff/member it stays an inert roadmap placeholder.
-    user.value.role === 'admin'
-        ? {
-              label: 'ตั้งค่าระบบ',
-              icon: 'fa-solid fa-gear',
-              children: [
-                  { label: 'จัดการสมาชิก', icon: 'fa-solid fa-user-gear', href: route('users.index') },
-                  { label: 'จัดการชุมชน', icon: 'fa-solid fa-map-location-dot', href: route('communities.index') },
-                  { label: 'จัดการเกณฑ์คะแนน', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
-                  { label: 'จัดการประวัตินำเข้า', icon: 'fa-solid fa-list-check', href: route('import-batches.index') },
-                  { label: 'ตั้งค่าทั่วไป', icon: 'fa-solid fa-toggle-on', href: route('system-settings.index') },
-                  { label: 'บันทึกการแก้ไข', icon: 'fa-solid fa-clipboard-list', href: route('audit-log.index') },
-                  { label: 'ประวัติการเข้าใช้งาน', icon: 'fa-solid fa-right-to-bracket', href: route('login-logs.index') },
-                  { label: 'สำรองข้อมูล', icon: 'fa-solid fa-box-archive', href: route('backups.index') },
-                  { label: 'ตารางเทียบ TOR', icon: 'fa-solid fa-table-list', href: route('tor-matrix.index') },
-              ],
-          }
-        : { label: 'ตั้งค่าระบบ', icon: 'fa-solid fa-gear' },
+    // ตั้งค่าระบบ module — admin only. Hidden entirely from staff/member (owner 2026-11-26; it used to be an inert
+    // gray placeholder for them).
+    ...(user.value.role === 'admin'
+        ? [
+              {
+                  label: 'ตั้งค่าระบบ',
+                  icon: 'fa-solid fa-gear',
+                  children: [
+                      { label: 'จัดการสมาชิก', icon: 'fa-solid fa-user-gear', href: route('users.index') },
+                      { label: 'จัดการชุมชน', icon: 'fa-solid fa-map-location-dot', href: route('communities.index') },
+                      { label: 'จัดการค่าน้ำหนัก', icon: 'fa-solid fa-sliders', href: route('scoring-criteria.index') },
+                      { label: 'จัดการประวัตินำเข้า', icon: 'fa-solid fa-list-check', href: route('import-batches.index') },
+                      { label: 'ตั้งค่าทั่วไป', icon: 'fa-solid fa-toggle-on', href: route('system-settings.index') },
+                      { label: 'บันทึกการแก้ไข', icon: 'fa-solid fa-clipboard-list', href: route('audit-log.index') },
+                      { label: 'ประวัติการเข้าใช้งาน', icon: 'fa-solid fa-right-to-bracket', href: route('login-logs.index') },
+                      { label: 'สำรองข้อมูล', icon: 'fa-solid fa-box-archive', href: route('backups.index') },
+                      { label: 'ตารางเทียบ TOR', icon: 'fa-solid fa-table-list', href: route('tor-matrix.index') },
+                  ],
+              },
+          ]
+        : []),
 ]);
 
 // A link is active on its own page and on its sub-pages (e.g. นำเข้าข้อมูล stays highlighted on /data-import/health).
@@ -256,8 +258,10 @@ onUnmounted(() => {
                     <i class="fa-solid fa-shield-halved text-lg"></i>
                 </div>
                 <div v-if="!rail" class="min-w-0">
-                    <p class="truncate text-sm font-bold leading-tight text-white">ระบบบริหารข้อมูลความเสี่ยง</p>
-                    <p class="truncate text-xs text-slate-400">อ.เมือง จ.มหาสารคาม</p>
+                    <p class="line-clamp-2 text-sm font-bold leading-tight text-white" title="แพลตฟอร์มข้อมูลการจัดการภัยพิบัติ">
+                        แพลตฟอร์มข้อมูลการจัดการภัยพิบัติ
+                    </p>
+                    <p class="truncate text-xs text-slate-400">MSK-Resilience Dashboard</p>
                 </div>
             </div>
 
@@ -356,7 +360,10 @@ onUnmounted(() => {
         <!-- Main -->
         <div class="flex min-w-0 flex-1 flex-col">
             <!-- Header -->
-            <header class="flex h-[72px] shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4 lg:px-6 print:hidden">
+            <!-- relative z-[35]: the header (and its user menu / search dropdowns) must sit above every page's sticky filter bar
+                 (z-20/z-30) but below page modals (z-[100]) and the mobile sidebar (z-40/50). Owner bug 2026-11-26: the
+                 ออกจากระบบ item was hidden under page 2's sticky filters. -->
+            <header class="relative z-[35] flex h-[72px] shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4 lg:px-6 print:hidden">
                 <button
                     type="button"
                     class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
@@ -466,7 +473,7 @@ onUnmounted(() => {
                 <div class="mb-4 hidden border-b-2 border-slate-800 pb-2 print:block">
                     <div class="flex items-end justify-between gap-4">
                         <div>
-                            <p class="text-base font-bold text-slate-900">ระบบบริหารข้อมูลความเสี่ยงและความเปราะบางของชุมชน</p>
+                            <p class="text-base font-bold text-slate-900">แพลตฟอร์มข้อมูลการจัดการภัยพิบัติ (MSK-Resilience Dashboard)</p>
                             <p class="text-xs text-slate-600">เทศบาลเมืองมหาสารคาม · {{ title }}</p>
                         </div>
                         <p class="text-right text-[11px] text-slate-500">พิมพ์เมื่อ {{ printedAt }}<br />โดย {{ user.name }}</p>

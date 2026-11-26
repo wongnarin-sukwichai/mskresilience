@@ -237,9 +237,9 @@ const inputClass =
 </script>
 
 <template>
-    <Head title="จัดการเกณฑ์คะแนน" />
+    <Head title="จัดการค่าน้ำหนัก" />
 
-    <AdminLayout title="จัดการเกณฑ์คะแนน">
+    <AdminLayout title="จัดการค่าน้ำหนัก">
         <div class="grid gap-5 xl:grid-cols-4">
             <!-- Set list -->
             <div class="h-fit overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm xl:col-span-1">

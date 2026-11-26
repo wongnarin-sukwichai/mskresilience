@@ -90,6 +90,8 @@ class ExecutiveController extends Controller
                     'outputPerMTok' => config('ai.price_output_per_mtok'),
                     'usdToThb' => config('ai.usd_to_thb'),
                 ],
+                // Admin ⓘ: the same call priced on other vendors' models (estimate only; config/ai.php).
+                'compare' => $isAdmin ? ['checkedAt' => config('ai.compare_checked_at'), 'vendors' => config('ai.compare')] : null,
             ],
         ]);
     }

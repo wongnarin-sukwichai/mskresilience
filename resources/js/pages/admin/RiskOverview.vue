@@ -6,8 +6,10 @@ import TorRef from '@/components/admin/TorRef.vue';
 // previous round (owner 2026-11-10).
 import AnimatedNumber from '@/components/admin/AnimatedNumber.vue';
 import BarChart from '@/components/admin/BarChart.vue';
+import CalcInfo from '@/components/admin/CalcInfo.vue';
 import RiskGauge from '@/components/admin/RiskGauge.vue';
 import { useInView } from '@/composables/useInView';
+import { type CalcSources, type CalcStep, type CalcValue, num, sheetsWithColumns } from '@/data/calcInfo';
 import {
     HAZARD_KEYS,
     RISK_LEVEL_KEYS,
@@ -39,6 +41,7 @@ const props = defineProps<{
     year: number | null;
     city: CityRisk | null;
     communities: CommunityRiskSummary[];
+    calcSources?: CalcSources | null;
 }>();
 
 // Filters: ช่วงข้อมูล reloads from the server (another as-of date); เลือกภัย is local, since every hazard is loaded.
@@ -160,6 +163,168 @@ function deltaText(delta: number) {
     return `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`;
 }
 
+// ── Admin ⓘ: formula + totals + source files for each calculated card (owner 2026-11-26; city level shows the
+// formula and totals only, per the owner) ──
+const fmt1 = (v: number | null | undefined) => (v === null || v === undefined ? '–' : v.toFixed(1));
+const fmt2 = (v: number | null | undefined) => (v === null || v === undefined ? '–' : v.toFixed(2));
+const fmtDelta = (v: number | null | undefined) => (v === null || v === undefined ? 'ยังไม่มีรอบก่อน' : deltaText(v));
+const HEVC_FORMULA = [
+    'ต่อชุมชน ต่อภัย h:',
+    '  h_HEVC = 20 × (wE·E_h + wV·V_h) × (1 − c·C_HEVC_h)',
+    '  C_HEVC_h = 1 + 0.8 × C_RAW_h',
+    'ภัยรวมของชุมชน:',
+    '  MULTI_HAZARD_HEVC = Σ(w_h × h_HEVC) ÷ Σw_h  (ตัดภัย N/A แล้วปรับน้ำหนัก)',
+    'ระดับเมือง (ถ่วงน้ำหนักด้วยประชากร):',
+    '  ค่าเมือง = Σ(ค่าชุมชน × ประชากร) ÷ Σประชากร  (เฉพาะชุมชนที่มีค่า)',
+    'Δ = ค่าเฉลี่ยถ่วงประชากรของ (รอบนี้ − รอบก่อน) ของชุมชนที่มีทั้ง 2 รอบ',
+];
+const HEVC_NOTES = [
+    'wE, wV, c, w_h และน้ำหนักย่อยของ V/C มาจากชุดค่าน้ำหนักที่ใช้ (เมนูจัดการค่าน้ำหนัก)',
+    'ค่ารายชุมชนแบบละเอียดทุกขั้น ดูได้จากปุ่ม "การคำนวณ" ในหน้าแผนที่รายชุมชน',
+];
+const cityValues = computed<CalcValue[]>(() => {
+    const s = selected.value;
+    if (!s || !props.city) return [];
+    return [
+        { label: 'ชุมชนที่มีค่า (นำมาเฉลี่ย)', value: `${s.communities} จาก ${props.city.totalCommunities} ชุมชน` },
+        { label: 'ประชากรรวมของชุมชนที่คำนวณได้', value: `${formatNumber(props.city.counts.population)} คน` },
+        { label: 'ชุดค่าน้ำหนักที่ใช้', value: props.city.criteriaSets.map((x) => x.name).join(', ') || '–' },
+        { label: 'Δ จากรอบก่อน', value: `${fmtDelta(s.delta)} (${s.deltaCommunities} ชุมชน)` },
+        { label: `ผลลัพธ์ ${selectedLabel.value}`, value: `${fmt2(s.value)} / 100`, result: true },
+    ];
+});
+const dominantValues = computed<CalcValue[]>(() =>
+    HAZARD_KEYS.map((h) => ({
+        label: `${hazardLabel[h]} (${h}_HEVC เมือง)`,
+        value: fmt2(props.city?.hazards[h].value),
+        result: h === props.city?.multi.dominant,
+    })),
+);
+const highRiskValues = computed<CalcValue[]>(() => [
+    { label: 'ชุมชนที่คำนวณได้', value: `${props.city?.scoredCommunities ?? 0} ชุมชน` },
+    { label: 'คะแนนที่ใช้นับ', value: hazard.value === 'ALL' ? 'MULTI_HAZARD_HEVC' : `${hazard.value}_HEVC` },
+    { label: 'ชุมชนที่คะแนน ≥ 75', value: `${highRiskCount.value} ชุมชน`, result: true },
+]);
+const exposureColumn = computed(() => (exposureHazard.value ? `e_numerator_count_${exposureHazard.value.toLowerCase()}` : null));
+const exposureValues = computed<CalcValue[]>(() => {
+    const col = exposureColumn.value;
+    if (!col || !props.city) return [];
+    return [
+        { label: `Σ ${col.toUpperCase()}`, value: `${formatNumber(props.city.counts[col])} คน`, result: true },
+        { label: 'Σ POPULATION', value: `${formatNumber(props.city.counts.population)} คน` },
+        { label: 'สัดส่วน', value: `${fmt1(pctOf(props.city.counts[col], props.city.counts.population))}%` },
+        { label: 'นับจาก', value: `${props.city.scoredCommunities} ชุมชนที่คำนวณได้` },
+    ];
+});
+const vulnerableValues = computed<CalcValue[]>(() => [
+    ...vulnerable.value.map((g) => ({
+        label: `Σ ${g.key.toUpperCase()} (${g.label})`,
+        value: `${formatNumber(g.count)} คน · ${fmt1(pctOf(g.count, props.city?.counts.population))}%`,
+    })),
+    { label: 'Σ POPULATION', value: `${formatNumber(props.city?.counts.population)} คน` },
+]);
+const hazardBarValues = computed<CalcValue[]>(() =>
+    HAZARD_KEYS.map((h) => {
+        const v = props.city?.hazards[h];
+        return { label: `${hazardLabel[h]} (${v?.communities ?? 0} ชุมชน)`, value: `${fmt2(v?.value)} · Δ ${fmtDelta(v?.delta)}` };
+    }),
+);
+const capacityValues = computed<CalcValue[]>(() => capacityBars.value.map((b) => ({ label: b.label, value: fmt2(b.value) })));
+const improvementValues = computed<CalcValue[]>(() =>
+    improvements.value.map((i) => ({ label: i.label, value: `${fmt2(i.value)} / 5 · ความแย่ ${fmt2(i.badness)}` })),
+);
+const CAPACITY_FORMULA = [
+    'ต่อชุมชน: กลุ่ม C (C4–C8) = Σ(w_i × ตัวชี้วัด_i) ÷ Σw_i  (ตัด N/A แล้วปรับน้ำหนัก)',
+    'C รวมรายภัย (C_RAW_h) = Σ(w × C กลุ่ม) ตามน้ำหนัก "C รวมรายภัย"',
+    'ระดับเมือง = Σ(ค่าชุมชน × ประชากร) ÷ Σประชากร',
+];
+const CAPACITY_NOTES = ['ตัวชี้วัดดิบ C4_1, C4_2, C6_3, C8_1, C8_2 แปลงเป็นคะแนน 0–5 ตามภาคผนวก B ก่อน', HEVC_NOTES[0]];
+const IMPROVEMENT_FORMULA = [
+    'ช่องว่าง (V_WARNING, V_INFRA): ความแย่ = ค่า  (สูง = แย่)',
+    'ความพร้อม (C4–C8): ความแย่ = 5 − ค่า  (ต่ำ = แย่)',
+    'เรียงความแย่จากมากไปน้อย แสดง 5 อันดับแรก (ค่าระดับเมืองถ่วงประชากร)',
+];
+const exposureSheets = computed(() => sheetsWithColumns(props.calcSources, [exposureColumn.value ?? '', 'population']));
+const vulnerableSheets = computed(() => sheetsWithColumns(props.calcSources, [...vulnerable.value.map((g) => g.key), 'population']));
+
+// แทนค่า card (owner 2026-11-26): the same steps with the real totals. City HEVC is a population-weighted average of
+// each community's own result, so only that last step is filled in; plugging city-average E/V/C into the HEVC formula
+// would give a different number. The per-community HEVC with numbers is page 3's "การคำนวณ" button.
+const avgStep = (label: string, a: { sum?: number; weight?: number; value: number | null } | undefined, unit = ''): CalcStep => ({
+    label,
+    text: a && a.value !== null && a.weight ? `${num(a.sum, 2)} ÷ ${num(a.weight)} = ${num(a.value, 2)}${unit}` : 'ไม่มีชุมชนที่มีค่า จึงไม่คำนวณ',
+});
+const pctStep = (label: string, part: number | undefined, whole: number | undefined): CalcStep => ({
+    label,
+    text: whole ? `${num(part)} ÷ ${num(whole)} × 100 = ${num(pctOf(part, whole), 1)}%` : 'ไม่มีประชากร จึงไม่คำนวณ',
+});
+const AVG_NOTE = 'ตัวตั้ง = Σ(ค่าของชุมชน × ประชากรชุมชน), ตัวหาร = Σประชากรของชุมชนที่มีค่า';
+
+const citySteps = computed<CalcStep[]>(() => {
+    const s = selected.value;
+    if (!s) return [];
+    const steps: CalcStep[] = [{ ...avgStep(`${selectedLabel.value} ระดับเมือง`, s), result: true }];
+    if (s.delta !== null)
+        steps.push({ label: 'Δ จากรอบก่อน', text: `${deltaText(s.delta)} (เฉลี่ยถ่วงประชากรจาก ${s.deltaCommunities} ชุมชนที่มีทั้ง 2 รอบ)` });
+    return steps;
+});
+const dominantSteps = computed<CalcStep[]>(() => {
+    const c = props.city;
+    if (!c) return [];
+    const parts = HAZARD_KEYS.map((h) => `${hazardLabel[h]} ${num(c.hazards[h].value, 2)}`).join(', ');
+    return [
+        ...HAZARD_KEYS.map((h) => avgStep(`${hazardLabel[h]} (${h}_HEVC)`, c.hazards[h])),
+        { label: 'ภัยเด่น', text: `max(${parts}) = ${c.multi.dominant ? hazardLabel[c.multi.dominant] : '–'}`, result: true },
+    ];
+});
+const highRiskSteps = computed<CalcStep[]>(() => {
+    const hits = ranked.value.filter((c) => levelOf(c.score) === 'very_high');
+    return [
+        {
+            label: 'ชุมชนที่คะแนน ≥ 75',
+            text: hits.length ? hits.map((c) => `${c.code} ${c.name} (${num(c.score, 1)})`).join(', ') : 'ไม่มี',
+        },
+        { label: 'จำนวน', text: `${hits.length} จาก ${props.city?.scoredCommunities ?? 0} ชุมชนที่คำนวณได้`, result: true },
+    ];
+});
+const exposureSteps = computed<CalcStep[]>(() => {
+    const col = exposureColumn.value;
+    if (!col || !props.city) return [];
+    return [
+        { label: `จำนวน (Σ ${col.toUpperCase()})`, text: `${num(props.city.counts[col])} คน`, result: true },
+        { ...pctStep('สัดส่วน', props.city.counts[col], props.city.counts.population), result: true },
+    ];
+});
+const vulnerableSteps = computed<CalcStep[]>(() =>
+    vulnerable.value.map((g) => ({
+        ...pctStep(`${g.label} (Σ ${g.key.toUpperCase()} = ${num(g.count)} คน)`, g.count, props.city?.counts.population),
+        result: true,
+    })),
+);
+const hazardBarSteps = computed<CalcStep[]>(() =>
+    HAZARD_KEYS.map((h) => ({ ...avgStep(`${hazardLabel[h]} (${h}_HEVC)`, props.city?.hazards[h]), result: true })),
+);
+// Each capacity bar → the numerator/denominator of its city average.
+function capacitySums(key: string): { sum?: number; weight?: number } | undefined {
+    const c = props.city;
+    if (!c) return undefined;
+    const fromHazard = (h: HazardKey) => ({ sum: c.hazards[h].cRawSum, weight: c.hazards[h].cRawWeight });
+    if (key === 'C_RAW' && hazard.value !== 'ALL') return fromHazard(hazard.value);
+    if (key.startsWith('C_')) return fromHazard(key.slice(2) as HazardKey);
+    if ((key === 'C6' || key === 'C7') && hazard.value !== 'ALL') return c.groupSums?.[`${key}_${hazard.value}`];
+    return c.groupSums?.[key];
+}
+const capacitySteps = computed<CalcStep[]>(() =>
+    capacityBars.value.map((b) => ({ ...avgStep(b.label, { ...capacitySums(b.key), value: b.value }), result: true })),
+);
+const improvementSteps = computed<CalcStep[]>(() =>
+    improvements.value.map((i, n) => ({
+        label: `${n + 1}. ${i.label}`,
+        text: i.kind === 'gap' ? `ความแย่ = ${num(i.value, 2)}` : `ความแย่ = 5 − ${num(i.value, 2)} = ${num(i.badness, 2)}`,
+        result: true,
+    })),
+);
+
 const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
 </script>
 
@@ -214,7 +379,15 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                         </span>
                         <div>
                             <h2 class="font-semibold text-slate-800">
-                                ระดับความเสี่ยงรวมของเมือง<TorRef :refs="['4.1.1(1)-2', '4.1.1(1)-4', 'คุณลักษณะ 2.2-5']" />
+                                ระดับความเสี่ยงรวมของเมือง<TorRef :refs="['4.1.1(1)-2', '4.1.1(1)-4', 'คุณลักษณะ 2.2-5']" /><CalcInfo
+                                    title="ระดับความเสี่ยงรวมของเมือง"
+                                    :formula="HEVC_FORMULA"
+                                    :values="cityValues"
+                                    :substituted="citySteps"
+                                    :substituted-note="AVG_NOTE"
+                                    :notes="HEVC_NOTES"
+                                    :sources="calcSources"
+                                />
                             </h2>
                             <p class="text-xs text-slate-400">{{ selectedLabel }}</p>
                         </div>
@@ -248,7 +421,19 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                             <i class="fa-solid fa-triangle-exclamation text-lg"></i>
                         </span>
                         <div>
-                            <h2 class="font-semibold text-slate-800">ภัยที่ควรเฝ้าระวัง (ภัยเด่น)</h2>
+                            <h2 class="font-semibold text-slate-800">
+                                ภัยที่ควรเฝ้าระวัง (ภัยเด่น)<CalcInfo
+                                    title="ภัยเด่น"
+                                    :formula="[
+                                        'ภัยเด่น = ภัยที่ HEVC ระดับเมืองสูงที่สุดใน 5 ภัย',
+                                        'HEVC เมืองของแต่ละภัย = Σ(h_HEVC ชุมชน × ประชากร) ÷ Σประชากร',
+                                    ]"
+                                    :values="dominantValues"
+                                    :substituted="dominantSteps"
+                                    :substituted-note="AVG_NOTE"
+                                    :sources="calcSources"
+                                />
+                            </h2>
                             <p class="text-xs text-slate-400">ภัยที่ HEVC ระดับเมืองสูงที่สุด</p>
                         </div>
                     </div>
@@ -288,7 +473,15 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
             <!-- Count cards -->
             <div class="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <div :class="card">
-                    <p class="text-sm font-semibold text-slate-700">จำนวนชุมชนเสี่ยงสูง</p>
+                    <p class="text-sm font-semibold text-slate-700">
+                        จำนวนชุมชนเสี่ยงสูง<CalcInfo
+                            title="จำนวนชุมชนเสี่ยงสูง"
+                            :formula="['นับชุมชนที่คะแนน ≥ 75 (ระดับสูง) หลังปัดเป็นทศนิยม 1 ตำแหน่ง', 'ชุมชนที่ข้อมูลไม่ครบหรือภัยเป็น N/A ไม่นับ']"
+                            :values="highRiskValues"
+                            :substituted="highRiskSteps"
+                            :sources="calcSources"
+                        />
+                    </p>
                     <div class="mt-3 flex items-center gap-4">
                         <i class="fa-solid fa-house-flood-water text-3xl text-red-500"></i>
                         <div>
@@ -299,7 +492,15 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                 </div>
                 <div :class="card">
                     <p class="text-sm font-semibold text-slate-700">
-                        ประชาชนที่อาจได้รับผลกระทบ
+                        ประชาชนที่อาจได้รับผลกระทบ<CalcInfo
+                            v-if="exposureColumn"
+                            title="ประชาชนที่อาจได้รับผลกระทบ"
+                            :formula="[`จำนวน = Σ ${exposureColumn.toUpperCase()} ของชุมชนที่คำนวณได้`, 'สัดส่วน = จำนวน ÷ Σ POPULATION × 100']"
+                            :values="exposureValues"
+                            :substituted="exposureSteps"
+                            :sheets="exposureSheets"
+                            :sources="calcSources"
+                        />
                         <span v-if="exposureHazard" class="font-normal text-slate-400"
                             >({{ hazard === 'ALL' ? 'ภัยเด่น: ' : '' }}{{ hazardLabel[exposureHazard] }})</span
                         >
@@ -322,7 +523,16 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                     </div>
                 </div>
                 <div :class="[card, 'xl:col-span-2']">
-                    <p class="text-sm font-semibold text-slate-700">กลุ่มเปราะบางสำคัญ</p>
+                    <p class="text-sm font-semibold text-slate-700">
+                        กลุ่มเปราะบางสำคัญ<CalcInfo
+                            title="กลุ่มเปราะบางสำคัญ"
+                            :formula="['จำนวนแต่ละกลุ่ม = Σ จำนวนของชุมชนที่คำนวณได้', 'ร้อยละ = จำนวน ÷ Σ POPULATION × 100']"
+                            :values="vulnerableValues"
+                            :substituted="vulnerableSteps"
+                            :sheets="vulnerableSheets"
+                            :sources="calcSources"
+                        />
+                    </p>
                     <div class="mt-3 grid grid-cols-3 gap-3">
                         <div v-for="g in vulnerable" :key="g.key" class="text-center">
                             <span class="mx-auto flex h-10 w-10 items-center justify-center rounded-full" :class="g.color">
@@ -342,7 +552,17 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
             <div class="mt-5 grid gap-5 xl:grid-cols-3">
                 <div :class="[card, 'xl:col-span-2']">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h2 class="font-semibold text-slate-800">ระดับความเสี่ยงรายภัย (HEVC)<TorRef :refs="['4.1.1(1)-1', 'คุณลักษณะ 2.2-1']" /></h2>
+                        <h2 class="font-semibold text-slate-800">
+                            ระดับความเสี่ยงรายภัย (HEVC)<TorRef :refs="['4.1.1(1)-1', 'คุณลักษณะ 2.2-1']" /><CalcInfo
+                                title="ระดับความเสี่ยงรายภัย"
+                                :formula="HEVC_FORMULA"
+                                :values="hazardBarValues"
+                                :substituted="hazardBarSteps"
+                                :substituted-note="AVG_NOTE"
+                                :notes="HEVC_NOTES"
+                                :sources="calcSources"
+                            />
+                        </h2>
                         <div class="flex flex-wrap gap-3 text-[11px] text-slate-500">
                             <span v-for="k in RISK_LEVEL_KEYS" :key="k" class="flex items-center gap-1">
                                 <span class="h-2.5 w-2.5 rounded-sm" :style="{ background: riskLevels[k].color }"></span>
@@ -430,7 +650,17 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
             <!-- Capacity + improvement points + top 5 -->
             <div class="mt-5 grid gap-5 xl:grid-cols-3">
                 <div ref="capacityEl" :class="card">
-                    <h2 class="font-semibold text-slate-800">ความพร้อมของเมือง<TorRef :refs="['4.3-4', 'คุณลักษณะ 2.2-4']" /></h2>
+                    <h2 class="font-semibold text-slate-800">
+                        ความพร้อมของเมือง<TorRef :refs="['4.3-4', 'คุณลักษณะ 2.2-4']" /><CalcInfo
+                            title="ความพร้อมของเมือง"
+                            :formula="CAPACITY_FORMULA"
+                            :values="capacityValues"
+                            :substituted="capacitySteps"
+                            :substituted-note="AVG_NOTE"
+                            :notes="CAPACITY_NOTES"
+                            :sources="calcSources"
+                        />
+                    </h2>
                     <p class="text-xs text-slate-400">
                         คะแนน 0–5 (สูง = พร้อมมาก){{ hazard === 'ALL' ? ' · C6/C7 แยกตามภัย ดูได้เมื่อเลือกภัย' : '' }}
                     </p>
@@ -451,7 +681,15 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                 </div>
 
                 <div :class="card">
-                    <h2 class="font-semibold text-slate-800">จุดที่ยังต้องปรับปรุง</h2>
+                    <h2 class="font-semibold text-slate-800">
+                        จุดที่ยังต้องปรับปรุง<CalcInfo
+                            title="จุดที่ยังต้องปรับปรุง"
+                            :formula="IMPROVEMENT_FORMULA"
+                            :values="improvementValues"
+                            :substituted="improvementSteps"
+                            :sources="calcSources"
+                        />
+                    </h2>
                     <p class="text-xs text-slate-400">ค่าที่แย่ที่สุด 5 รายการของเมือง (จากข้อมูลจริง)</p>
                     <TransitionGroup tag="ul" name="rank" class="relative mt-4 space-y-2.5">
                         <li v-for="item in improvements" :key="item.label" class="flex items-start gap-2.5 text-sm">

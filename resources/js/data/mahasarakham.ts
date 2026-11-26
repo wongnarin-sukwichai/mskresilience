@@ -5,7 +5,6 @@ export interface Community {
     name: string;
     lat: number;
     lng: number;
-    activeRisk: 'flood' | 'fire' | 'wind' | 'heat' | 'pm25' | 'none';
 }
 
 // อำเภอเมือง มหาสารคาม
@@ -169,24 +168,6 @@ export const MUNICIPALITY_BOUNDARY: [number, number][] = [
     [16.2017245, 103.2627243],
 ];
 
-export const riskColors: Record<Community['activeRisk'], string> = {
-    flood: '#2563eb', // blue-600
-    fire: '#dc2626', // red-600
-    wind: '#0d9488', // teal-600
-    heat: '#ea580c', // orange-600
-    pm25: '#9333ea', // purple-600
-    none: '#94a3b8', // slate-400
-};
-
-export const riskNameTH: Record<Community['activeRisk'], string> = {
-    flood: 'อุทกภัย',
-    fire: 'อัคคีภัย',
-    wind: 'วาตภัย',
-    heat: 'คลื่นความร้อนสูง',
-    pm25: 'ฝุ่น PM 2.5 เกินมาตรฐาน',
-    none: 'ปลอดภัย / ความเสี่ยงต่ำ',
-};
-
 // The 32 official ชุมชน of เทศบาลเมืองมหาสารคาม (names & count verified against data.mkm.go.th, the
 // municipality's open-data portal). Coordinates are each community's "pole of inaccessibility" (the
 // point deepest inside its polygon, via the `polylabel` algorithm — robust for concave shapes, unlike a
@@ -198,39 +179,38 @@ export const riskNameTH: Record<Community['activeRisk'], string> = {
 // old points fell outside its own real polygon (often inside a distant, unrelated community's polygon
 // instead), which visually showed up as a community's name badge sitting on a completely different
 // community's colored zone. Recompute these (same polylabel-from-communityBoundaries.ts approach) if
-// communityBoundaries.ts is ever regenerated from an updated shapefile. activeRisk values are illustrative
-// demo data, not live risk data.
+// communityBoundaries.ts is ever regenerated from an updated shapefile.
 export const communities: Community[] = [
-    { id: 1, code: 'R031', name: 'ชุมชนตักศิลา 1', lat: 16.198425, lng: 103.2673162, activeRisk: 'fire' },
-    { id: 2, code: 'R002', name: 'ชุมชนตักศิลา 2', lat: 16.2076325, lng: 103.2787694, activeRisk: 'flood' },
-    { id: 3, code: 'R006', name: 'ชุมชนธัญญา 1', lat: 16.1975287, lng: 103.2962945, activeRisk: 'none' },
-    { id: 4, code: 'R017', name: 'ชุมชนธัญญา 2', lat: 16.1914714, lng: 103.2987311, activeRisk: 'pm25' },
-    { id: 5, code: 'R025', name: 'ชุมชนธัญญา 3', lat: 16.1847103, lng: 103.2993712, activeRisk: 'none' },
-    { id: 6, code: 'R003', name: 'ชุมชนธัญญา 4', lat: 16.1852903, lng: 103.2919831, activeRisk: 'wind' },
-    { id: 7, code: 'R009', name: 'ชุมชนนาควิชัย 1', lat: 16.1821963, lng: 103.30323, activeRisk: 'none' },
-    { id: 8, code: 'R010', name: 'ชุมชนนาควิชัย 2', lat: 16.1768765, lng: 103.304644, activeRisk: 'heat' },
-    { id: 9, code: 'R022', name: 'ชุมชนนาควิชัย 3', lat: 16.1693022, lng: 103.3016228, activeRisk: 'none' },
-    { id: 10, code: 'R026', name: 'ชุมชนบ้านแมด', lat: 16.1787904, lng: 103.3341106, activeRisk: 'flood' },
-    { id: 11, code: 'R028', name: 'ชุมชนอภิสิทธิ์ 1', lat: 16.179742, lng: 103.3128245, activeRisk: 'none' },
-    { id: 12, code: 'R015', name: 'ชุมชนอภิสิทธิ์ 2', lat: 16.1720222, lng: 103.3088399, activeRisk: 'pm25' },
-    { id: 13, code: 'R023', name: 'ชุมชนอุทัยทิศ 1', lat: 16.1828053, lng: 103.3215728, activeRisk: 'none' },
-    { id: 14, code: 'R012', name: 'ชุมชนอุทัยทิศ 2', lat: 16.1740614, lng: 103.3215419, activeRisk: 'wind' },
-    { id: 15, code: 'R007', name: 'ชุมชนอุทัยทิศ 3', lat: 16.1717903, lng: 103.3149272, activeRisk: 'none' },
-    { id: 16, code: 'R030', name: 'ชุมชนอุทัยทิศ 4', lat: 16.1628492, lng: 103.3160059, activeRisk: 'fire' },
-    { id: 17, code: 'R013', name: 'ชุมชนโพธิ์ศรี 1', lat: 16.1854003, lng: 103.3149044, activeRisk: 'none' },
-    { id: 18, code: 'R014', name: 'ชุมชนโพธิ์ศรี 2', lat: 16.1836948, lng: 103.3099929, activeRisk: 'flood' },
-    { id: 19, code: 'R011', name: 'ชุมชนเครือวัลย์ 1', lat: 16.1673898, lng: 103.2914681, activeRisk: 'none' },
-    { id: 20, code: 'R029', name: 'ชุมชนเครือวัลย์ 2', lat: 16.1725756, lng: 103.2878542, activeRisk: 'pm25' },
-    { id: 21, code: 'R032', name: 'ชุมชนเครือวัลย์ 3', lat: 16.1667419, lng: 103.2965855, activeRisk: 'none' },
-    { id: 22, code: 'R027', name: 'ชุมชนมหาชัย', lat: 16.1841375, lng: 103.3069201, activeRisk: 'heat' },
-    { id: 23, code: 'R020', name: 'ชุมชนสามัคคี 1', lat: 16.1860533, lng: 103.3033786, activeRisk: 'wind' },
-    { id: 24, code: 'R005', name: 'ชุมชนสามัคคี 2', lat: 16.1927297, lng: 103.3053037, activeRisk: 'none' },
-    { id: 25, code: 'R004', name: 'ชุมชนศรีมหาสารคาม', lat: 16.1796271, lng: 103.2874166, activeRisk: 'fire' },
-    { id: 26, code: 'R019', name: 'ชุมชนศรีสวัสดิ์ 1', lat: 16.1996885, lng: 103.2836925, activeRisk: 'none' },
-    { id: 27, code: 'R001', name: 'ชุมชนศรีสวัสดิ์ 2', lat: 16.1945304, lng: 103.2725989, activeRisk: 'flood' },
-    { id: 28, code: 'R024', name: 'ชุมชนศรีสวัสดิ์ 3', lat: 16.1907368, lng: 103.2778987, activeRisk: 'none' },
-    { id: 29, code: 'R018', name: 'ชุมชนส่องเหนือ', lat: 16.1721728, lng: 103.3270641, activeRisk: 'wind' },
-    { id: 30, code: 'R021', name: 'ชุมชนส่องใต้', lat: 16.1674667, lng: 103.333358, activeRisk: 'flood' },
-    { id: 31, code: 'R008', name: 'ชุมชนปัจฉิมทัศน์ 1', lat: 16.197852, lng: 103.2906404, activeRisk: 'pm25' },
-    { id: 32, code: 'R016', name: 'ชุมชนปัจฉิมทัศน์ 2', lat: 16.1937354, lng: 103.2883356, activeRisk: 'heat' },
+    { id: 1, code: 'R031', name: 'ชุมชนตักศิลา 1', lat: 16.198425, lng: 103.2673162 },
+    { id: 2, code: 'R002', name: 'ชุมชนตักศิลา 2', lat: 16.2076325, lng: 103.2787694 },
+    { id: 3, code: 'R006', name: 'ชุมชนธัญญา 1', lat: 16.1975287, lng: 103.2962945 },
+    { id: 4, code: 'R017', name: 'ชุมชนธัญญา 2', lat: 16.1914714, lng: 103.2987311 },
+    { id: 5, code: 'R025', name: 'ชุมชนธัญญา 3', lat: 16.1847103, lng: 103.2993712 },
+    { id: 6, code: 'R003', name: 'ชุมชนธัญญา 4', lat: 16.1852903, lng: 103.2919831 },
+    { id: 7, code: 'R009', name: 'ชุมชนนาควิชัย 1', lat: 16.1821963, lng: 103.30323 },
+    { id: 8, code: 'R010', name: 'ชุมชนนาควิชัย 2', lat: 16.1768765, lng: 103.304644 },
+    { id: 9, code: 'R022', name: 'ชุมชนนาควิชัย 3', lat: 16.1693022, lng: 103.3016228 },
+    { id: 10, code: 'R026', name: 'ชุมชนบ้านแมด', lat: 16.1787904, lng: 103.3341106 },
+    { id: 11, code: 'R028', name: 'ชุมชนอภิสิทธิ์ 1', lat: 16.179742, lng: 103.3128245 },
+    { id: 12, code: 'R015', name: 'ชุมชนอภิสิทธิ์ 2', lat: 16.1720222, lng: 103.3088399 },
+    { id: 13, code: 'R023', name: 'ชุมชนอุทัยทิศ 1', lat: 16.1828053, lng: 103.3215728 },
+    { id: 14, code: 'R012', name: 'ชุมชนอุทัยทิศ 2', lat: 16.1740614, lng: 103.3215419 },
+    { id: 15, code: 'R007', name: 'ชุมชนอุทัยทิศ 3', lat: 16.1717903, lng: 103.3149272 },
+    { id: 16, code: 'R030', name: 'ชุมชนอุทัยทิศ 4', lat: 16.1628492, lng: 103.3160059 },
+    { id: 17, code: 'R013', name: 'ชุมชนโพธิ์ศรี 1', lat: 16.1854003, lng: 103.3149044 },
+    { id: 18, code: 'R014', name: 'ชุมชนโพธิ์ศรี 2', lat: 16.1836948, lng: 103.3099929 },
+    { id: 19, code: 'R011', name: 'ชุมชนเครือวัลย์ 1', lat: 16.1673898, lng: 103.2914681 },
+    { id: 20, code: 'R029', name: 'ชุมชนเครือวัลย์ 2', lat: 16.1725756, lng: 103.2878542 },
+    { id: 21, code: 'R032', name: 'ชุมชนเครือวัลย์ 3', lat: 16.1667419, lng: 103.2965855 },
+    { id: 22, code: 'R027', name: 'ชุมชนมหาชัย', lat: 16.1841375, lng: 103.3069201 },
+    { id: 23, code: 'R020', name: 'ชุมชนสามัคคี 1', lat: 16.1860533, lng: 103.3033786 },
+    { id: 24, code: 'R005', name: 'ชุมชนสามัคคี 2', lat: 16.1927297, lng: 103.3053037 },
+    { id: 25, code: 'R004', name: 'ชุมชนศรีมหาสารคาม', lat: 16.1796271, lng: 103.2874166 },
+    { id: 26, code: 'R019', name: 'ชุมชนศรีสวัสดิ์ 1', lat: 16.1996885, lng: 103.2836925 },
+    { id: 27, code: 'R001', name: 'ชุมชนศรีสวัสดิ์ 2', lat: 16.1945304, lng: 103.2725989 },
+    { id: 28, code: 'R024', name: 'ชุมชนศรีสวัสดิ์ 3', lat: 16.1907368, lng: 103.2778987 },
+    { id: 29, code: 'R018', name: 'ชุมชนส่องเหนือ', lat: 16.1721728, lng: 103.3270641 },
+    { id: 30, code: 'R021', name: 'ชุมชนส่องใต้', lat: 16.1674667, lng: 103.333358 },
+    { id: 31, code: 'R008', name: 'ชุมชนปัจฉิมทัศน์ 1', lat: 16.197852, lng: 103.2906404 },
+    { id: 32, code: 'R016', name: 'ชุมชนปัจฉิมทัศน์ 2', lat: 16.1937354, lng: 103.2883356 },
 ];

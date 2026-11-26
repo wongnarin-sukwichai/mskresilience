@@ -40,6 +40,18 @@ interface Investment {
     hazard: HazardKey | null;
     parts: { e: number | null; v: number | null; cRaw: number | null } | null;
 }
+interface CompareModel {
+    name: string;
+    input: number;
+    output: number;
+    note?: string;
+}
+interface CompareVendor {
+    vendor: string;
+    company: string;
+    source: string;
+    models: CompareModel[];
+}
 interface Usage {
     at: string;
     status: string;
@@ -88,6 +100,7 @@ const props = defineProps<{
         facts: Record<string, unknown> | null;
         usage: Usage[] | null;
         pricing: { model: string; inputPerMTok: number; outputPerMTok: number; usdToThb: number };
+        compare: { checkedAt: string; vendors: CompareVendor[] } | null;
     };
 }>();
 
@@ -113,6 +126,23 @@ const estimate = computed(() => {
     return { usd, thb: usd * p.usdToThb };
 });
 const totalSpent = computed(() => (props.summary?.usage ?? []).reduce((s, u) => s + (u.costUsd ?? 0), 0));
+
+// Cost comparison tabs (owner 2026-11-26): the same typical call priced on other vendors' models. Estimate only; the
+// system only ever calls Claude. When real calls exist, their average token counts replace the 2,500/2,000 guess.
+const compareTab = ref(0);
+const callTokens = computed(() => {
+    const ok = (props.summary?.usage ?? []).filter((u) => u.inputTokens !== null && u.outputTokens !== null);
+    if (!ok.length) return { input: 2500, output: 2000, measured: false };
+    return {
+        input: Math.round(ok.reduce((s, u) => s + (u.inputTokens ?? 0), 0) / ok.length),
+        output: Math.round(ok.reduce((s, u) => s + (u.outputTokens ?? 0), 0) / ok.length),
+        measured: true,
+    };
+});
+function callCost(m: CompareModel) {
+    const usd = (callTokens.value.input * m.input + callTokens.value.output * m.output) / 1_000_000;
+    return { usd, thb: usd * (props.summary?.pricing.usdToThb ?? 0) };
+}
 
 // ── Scatter HEVC × budget per person (TOR 4.1.1(3)-1) ──
 const scatterPoints = computed(() =>
@@ -553,9 +583,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
         >
             <div class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
                 <div class="flex items-center justify-between bg-blue-600 px-6 py-4">
-                    <h3 class="text-base font-semibold text-white">
-                        <i class="fa-solid fa-circle-info mr-1.5"></i>สรุปด้วย AI ประมาณการ
-                    </h3>
+                    <h3 class="text-base font-semibold text-white"><i class="fa-solid fa-circle-info mr-1.5"></i>สรุปด้วย AI ประมาณการ</h3>
                     <button type="button" class="text-blue-100 hover:text-white" aria-label="ปิด" @click="costOpen = false">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
@@ -565,9 +593,7 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                         <h4 class="font-semibold text-slate-800">ค่าใช้จ่าย</h4>
                         <ul class="mt-1 list-disc space-y-1 pl-5 text-slate-600">
                             <li>
-                                ราคา ${{ summary.pricing.inputPerMTok }} ต่อข้อมูลส่งเข้า 1 ล้าน token และ ${{
-                                    summary.pricing.outputPerMTok
-                                }}
+                                ราคา ${{ summary.pricing.inputPerMTok }} ต่อข้อมูลส่งเข้า 1 ล้าน token และ ${{ summary.pricing.outputPerMTok }}
                                 ต่อข้อความตอบกลับ 1 ล้าน token
                             </li>
                             <li v-if="estimate">
@@ -583,6 +609,60 @@ const card = 'rounded-2xl border border-slate-100 bg-white p-5 shadow-sm';
                                 ระบบใช้สรุปแบบกฎได้ตามปกติ
                             </li>
                         </ul>
+                    </section>
+                    <!-- Cost comparison with other vendors (owner 2026-11-26) — estimate only, never called. -->
+                    <section v-if="summary.compare">
+                        <h4 class="font-semibold text-slate-800">เปรียบเทียบค่าใช้จ่ายกับผู้ให้บริการอื่น (ประมาณการ)</h4>
+                        <div class="mt-2 flex gap-1 border-b border-slate-200" role="tablist">
+                            <button
+                                v-for="(v, i) in summary.compare.vendors"
+                                :key="v.vendor"
+                                type="button"
+                                role="tab"
+                                :aria-selected="compareTab === i"
+                                class="-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors"
+                                :class="compareTab === i ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'"
+                                @click="compareTab = i"
+                            >
+                                {{ v.vendor }} <span class="text-xs font-normal text-slate-400">{{ v.company }}</span>
+                            </button>
+                        </div>
+                        <table class="mt-2 w-full text-xs">
+                            <thead class="text-left text-slate-500">
+                                <tr>
+                                    <th class="py-1 pr-2 font-medium">รุ่น</th>
+                                    <th class="py-1 pr-2 text-right font-medium">ราคา เข้า / ออก ($ ต่อ 1 ล้าน token)</th>
+                                    <th class="py-1 pr-2 text-right font-medium">ต่อครั้ง</th>
+                                    <th class="py-1 text-right font-medium">เดือนละ 4 ครั้ง</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="m in summary.compare.vendors[compareTab].models" :key="m.name" class="border-t border-slate-100">
+                                    <td class="py-1.5 pr-2">
+                                        <span class="font-medium text-slate-700">{{ m.name }}</span>
+                                        <span v-if="m.note" class="block text-[11px] text-amber-700">{{ m.note }}</span>
+                                    </td>
+                                    <td class="py-1.5 pr-2 text-right">{{ m.input }} / {{ m.output }}</td>
+                                    <td class="py-1.5 pr-2 text-right">
+                                        ${{ callCost(m).usd.toFixed(4) }}
+                                        <span class="block text-slate-400">≈ {{ callCost(m).thb.toFixed(2) }} บาท</span>
+                                    </td>
+                                    <td class="py-1.5 text-right">≈ {{ (callCost(m).thb * 4).toFixed(1) }} บาท</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
+                            คิดจาก token
+                            {{ callTokens.measured ? 'เฉลี่ยของการเรียกใช้จริง' : 'โดยประมาณ' }} เข้า {{ callTokens.input.toLocaleString() }} / ออก
+                            {{ callTokens.output.toLocaleString() }} ต่อครั้ง · ราคาตามหน้าราคาทางการ ณ {{ summary.compare.checkedAt }} (<a
+                                :href="summary.compare.vendors[compareTab].source"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-blue-600 hover:underline"
+                                >ดูหน้าราคา</a
+                            >) · แต่ละเจ้านับ token ภาษาไทยไม่เท่ากัน และราคาเปลี่ยนได้ ตัวเลขนี้จึงเป็นการประมาณเพื่อเปรียบเทียบเท่านั้น ·
+                            ระบบเรียกใช้ Claude อย่างเดียว
+                        </p>
                     </section>
                     <section>
                         <h4 class="font-semibold text-slate-800">ข้อมูลที่ส่งให้ AI</h4>

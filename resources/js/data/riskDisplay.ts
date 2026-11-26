@@ -1,6 +1,5 @@
 // Display helpers for the calc engine's output (App\Scoring\RiskEngine), shared by the dashboard pages.
 // Keys match the engine: hazards FLOOD/FIRE/STORM/HEAT/PM25, levels low/moderate/high/very_high.
-// hazardMeta.ts is the older public-map module (keys flood/wind/…, old level names); don't mix the two.
 import type { HazardKey, RiskLevelKey } from '@/types';
 
 export const HAZARD_KEYS: HazardKey[] = ['FLOOD', 'FIRE', 'STORM', 'HEAT', 'PM25'];

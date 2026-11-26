@@ -10,7 +10,7 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
 // Self-registration is disabled — accounts are provisioned by an administrator, not signed up publicly.
-// RegisteredUserController / pages/auth/Register.vue are kept in the codebase but unrouted.
+// Self-registration was removed (owner); its controller and page were deleted 2026-11-26.
 
 Route::middleware('guest')->group(function () {
     Route::get('login', [AuthenticatedSessionController::class, 'create'])

@@ -122,7 +122,7 @@ const section = 'print-keep mt-6';
             <p class="text-lg font-semibold text-slate-700">ชุมชน{{ community.name }} ({{ community.code }})</p>
             <p class="mt-1 text-xs text-slate-500">
                 ข้อมูล ณ {{ formatThaiDate(community.dataDate) }} · ชุดเกณฑ์ {{ community.criteriaSet ?? '–' }} · จัดทำ {{ formatThaiDate(today) }} ·
-                ที่มา: ระบบบริหารข้อมูลความเสี่ยงและความเปราะบางของชุมชน เทศบาลเมืองมหาสารคาม
+                ที่มา: แพลตฟอร์มข้อมูลการจัดการภัยพิบัติ (MSK-Resilience Dashboard) เทศบาลเมืองมหาสารคาม
             </p>
 
             <!-- 1. Profile + risk -->

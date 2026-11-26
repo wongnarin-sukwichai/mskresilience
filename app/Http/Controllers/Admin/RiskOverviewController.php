@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Scoring\CalcSources;
 use App\Scoring\RiskEngine;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -36,6 +38,8 @@ class RiskOverviewController extends Controller
                 'multi' => $c['multi'] ? ['hevc' => $c['multi']['hevc'], 'level' => $c['multi']['level'], 'dominant' => $c['multi']['dominant']] : null,
                 'hazards' => $c['hazards'] ? array_map(fn ($h) => ['hevc' => $h['hevc'], 'level' => $h['level']], $c['hazards']) : null,
             ], $result['communities']) : [],
+            // Admin-only ⓘ on each calculated card (owner 2026-11-26): which import files this round read.
+            'calcSources' => $result && $request->user()->role === UserRole::Admin ? CalcSources::forRun($result) : null,
         ]);
     }
 }

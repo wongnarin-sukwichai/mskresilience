@@ -115,6 +115,9 @@ export interface CityAverage {
     communities: number;
     delta: number | null;
     deltaCommunities: number;
+    /** Σ(value × population) and Σpopulation behind alue (admin ⓘ shows the division). */
+    sum?: number;
+    weight?: number;
 }
 
 export interface CityRisk {
@@ -130,6 +133,8 @@ export interface CityRisk {
             vSystemDelta: number | null;
             cRaw: number | null;
             cRawDelta: number | null;
+            cRawSum?: number;
+            cRawWeight?: number;
         }
     >;
     groups: Record<string, number | null>;
@@ -192,6 +197,7 @@ export interface CityFactors {
     exposure: Record<HazardKey, { count: number; percent: number | null; score: number | null }>;
     groups: Record<string, number | null>;
     groupDeltas: Record<string, number | null>;
+    groupSums?: Record<string, { sum: number; weight: number }>;
     counts: Record<string, number>;
     scoredCommunities: number;
     totalCommunities: number;

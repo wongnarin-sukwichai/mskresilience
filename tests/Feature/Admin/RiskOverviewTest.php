@@ -64,4 +64,30 @@ class RiskOverviewTest extends TestCase
             ->where('city.scoredCommunities', 1)
             ->where('city.missing.0.code', 'R002'));
     }
+
+    public function test_only_admins_get_the_source_files_behind_the_numbers()
+    {
+        ScoringCriteriaSet::create(['name' => 'ชุด', 'start_fiscal_year' => 2568, 'weights' => CriteriaSchema::defaults()]);
+        $this->seedCommunity('R001', '2025-01-20');
+        $this->seedCommunity('R002', '2025-01-20');
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $batch = DB::table('import_batches')->insertGetId([
+            'work_group' => 'welfare', 'user_id' => $admin->id, 'original_filename' => 'สวัสดิการ.xlsx', 'source' => 'file', 'status' => 'active',
+            'row_count' => 2, 'replaced_count' => 0, 'community_count' => 2, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('welfare_records')->update(['import_batch_id' => $batch]);
+
+        $this->actingAs($admin)->get('/risk-overview')->assertInertia(fn ($page) => $page
+            ->where('calcSources.welfare.label', 'งานสวัสดิการสังคม')
+            ->where('calcSources.welfare.batches.0.id', $batch)
+            ->where('calcSources.welfare.batches.0.file', 'สวัสดิการ.xlsx')
+            ->where('calcSources.welfare.batches.0.communities', 2)
+            ->where('calcSources.disaster.batches', [])
+            ->etc());
+
+        foreach ([UserRole::Staff, UserRole::Member] as $role) {
+            $this->actingAs(User::factory()->create(['role' => $role]))->get('/risk-overview')
+                ->assertInertia(fn ($page) => $page->where('calcSources', null)->etc());
+        }
+    }
 }

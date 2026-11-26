@@ -20,7 +20,7 @@ class CriteriaSchema
         'FLOOD' => 'อุทกภัย',
         'FIRE' => 'อัคคีภัย',
         'STORM' => 'วาตภัย',
-        'HEAT' => 'คลื่นความร้อน',
+        'HEAT' => 'ความร้อน',
         'PM25' => 'PM2.5',
     ];
 
@@ -43,7 +43,7 @@ class CriteriaSchema
                         ['FLOOD_HEVC', 'อุทกภัย', 0.35],
                         ['FIRE_HEVC', 'อัคคีภัย', 0.10],
                         ['STORM_HEVC', 'วาตภัย', 0.15],
-                        ['HEAT_HEVC', 'คลื่นความร้อน', 0.10],
+                        ['HEAT_HEVC', 'ความร้อน', 0.10],
                         ['PM25_HEVC', 'PM2.5', 0.30],
                     ]),
                 ],
